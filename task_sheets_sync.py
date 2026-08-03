@@ -37,9 +37,14 @@ class SheetsSyncManager:
             creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
             if creds_json_env:
                 try:
-                    info = json.loads(creds_json_env)
+                    s_clean = creds_json_env.strip()
+                    if (s_clean.startswith("'") and s_clean.endswith("'")) or (s_clean.startswith('"') and s_clean.endswith('"')):
+                        s_clean = s_clean[1:-1].strip()
+                    info = json.loads(s_clean)
+                    if isinstance(info.get("private_key"), str):
+                        info["private_key"] = info["private_key"].replace("\\n", "\n")
                     creds = Credentials.from_service_account_info(info, scopes=scopes)
-                    logger.info("Loaded Google credentials from GOOGLE_CREDENTIALS_JSON environment variable.")
+                    logger.info("Loaded Google credentials from GOOGLE_CREDENTIALS_JSON env var.")
                 except Exception as e:
                     logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
 
@@ -99,6 +104,40 @@ class SheetsSyncManager:
                 logger.warning(f"Task #{task_id} not found in Google Sheets for status update.")
         except Exception as e:
             logger.error(f"Error updating task #{task_id} status in Google Sheets: {e}")
+
+    def update_task_rating(self, task_id: int, rating: int):
+        if not self.enabled or not self.sheet:
+            return
+        try:
+            id_col_vals = self.sheet.col_values(1)
+            target_row = None
+            str_id = str(task_id).strip()
+            for idx, val in enumerate(id_col_vals):
+                if str(val).strip() == str_id:
+                    target_row = idx + 1
+                    break
+            if target_row:
+                self.sheet.update_cell(target_row, 8, f"{rating}/5")
+                logger.info(f"Task #{task_id} rating updated to {rating}/5 in Google Sheets.")
+        except Exception as e:
+            logger.error(f"Error updating task #{task_id} rating in Google Sheets: {e}")
+
+    def update_task_dispute(self, task_id: int, dispute_reason: str):
+        if not self.enabled or not self.sheet:
+            return
+        try:
+            id_col_vals = self.sheet.col_values(1)
+            target_row = None
+            str_id = str(task_id).strip()
+            for idx, val in enumerate(id_col_vals):
+                if str(val).strip() == str_id:
+                    target_row = idx + 1
+                    break
+            if target_row:
+                self.sheet.update_cell(target_row, 9, f"Оспаривание: {dispute_reason}")
+                logger.info(f"Task #{task_id} dispute comment updated in Google Sheets.")
+        except Exception as e:
+            logger.error(f"Error updating task #{task_id} dispute in Google Sheets: {e}")
 
     def append_bike_report(self, report: dict):
         if not self.enabled or not self.client:
