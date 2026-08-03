@@ -106,13 +106,17 @@ async def message_auto_detector_handler(update: Update, context: ContextTypes.DE
     if not update.message or not update.message.text:
         return
 
+    user = update.message.from_user
+    if not user:
+        return
+
     text = update.message.text
 
     # Skip if message starts with a command registered elsewhere (e.g. /start, /help, /list, /done)
     if text.startswith("/") and not any(text.startswith(cmd) for cmd in ["/task", "/задача", "/add"]):
         return
 
-    if is_task_message(text):
+    if is_task_message(text, user=user):
         task_text = clean_task_text(text)
         await _process_and_create_task(update, task_text)
 

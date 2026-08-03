@@ -11,31 +11,46 @@ NLP_KEYWORDS = [
 HASHTAGS = ["#задача", "#task", "#todo"]
 COMMANDS = ["/task", "/задача", "/add"]
 
-def is_task_message(text: str, has_explicit_command: bool = False) -> bool:
+def has_explicit_sla(text: str) -> bool:
+    if not text:
+        return False
+    text_lower = text.lower()
+    patterns = [
+        r"\b(?:в течение|через)\s+\d+\s*(?:ч|час|часа|часов|д|день|дня|дней|мин|минут|минуты)\b",
+        r"\bдо завтра\b",
+        r"\bдо\s+\d{1,2}[:\-.]\d{2}\b",
+        r"\bsla\s*[:\-=]?\s*\d+",
+        r"\bсрок\s*[:\-=]?\s*\d+",
+        r"\b\d+\s*(?:ч|час|часа|часов|дней|дня|дний|д)\b",
+        r"\bдо\s+\d{1,2}\.\d{2}\b"
+    ]
+    for p in patterns:
+        if re.search(p, text_lower):
+            return True
+    return False
+
+def is_task_message(text: str, user=None, has_explicit_command: bool = False) -> bool:
     if not text:
         return False
 
+    # 1. Author check: ONLY process messages from @orzmkh
+    if user:
+        username = getattr(user, "username", "") or ""
+        if username.lower() != "orzmkh":
+            return False
+
     text_lower = text.lower().strip()
 
-    # 1. Explicit commands
-    if has_explicit_command:
-        return True
+    # 2. Keyword check: MUST contain 'задача', 'задачу', '/task', '/задача', '#задача'
+    has_task_kw = any(kw in text_lower for kw in ["задача", "задачу", "/task", "/задача", "#задача", "#task"])
+    if not has_task_kw and not has_explicit_command:
+        return False
 
-    for cmd in COMMANDS:
-        if text_lower.startswith(cmd):
-            return True
+    # 3. SLA check: MUST specify explicit SLA/deadline
+    if not has_explicit_sla(text_lower) and not has_explicit_command:
+        return False
 
-    # 2. Hashtags
-    for tag in HASHTAGS:
-        if tag in text_lower:
-            return True
-
-    # 3. NLP trigger keywords
-    for pattern in NLP_KEYWORDS:
-        if re.search(pattern, text_lower):
-            return True
-
-    return False
+    return True
 
 
 def extract_assignee(message) -> str:
