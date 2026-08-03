@@ -105,7 +105,7 @@ class SheetsSyncManager:
         except Exception as e:
             logger.error(f"Error updating task #{task_id} status in Google Sheets: {e}")
 
-    def update_task_rating(self, task_id: int, rating: int):
+    def update_task_rating(self, task_id: int, rating: int, is_final: bool = False):
         if not self.enabled or not self.sheet:
             return
         try:
@@ -117,8 +117,9 @@ class SheetsSyncManager:
                     target_row = idx + 1
                     break
             if target_row:
-                self.sheet.update_cell(target_row, 8, f"{rating}/5")
-                logger.info(f"Task #{task_id} rating updated to {rating}/5 in Google Sheets.")
+                col = 10 if is_final else 8
+                self.sheet.update_cell(target_row, col, f"{rating}/5")
+                logger.info(f"Task #{task_id} rating updated to {rating}/5 in Google Sheets (col {col}).")
         except Exception as e:
             logger.error(f"Error updating task #{task_id} rating in Google Sheets: {e}")
 
@@ -134,7 +135,7 @@ class SheetsSyncManager:
                     target_row = idx + 1
                     break
             if target_row:
-                self.sheet.update_cell(target_row, 9, f"Оспаривание: {dispute_reason}")
+                self.sheet.update_cell(target_row, 9, dispute_reason)
                 logger.info(f"Task #{task_id} dispute comment updated in Google Sheets.")
         except Exception as e:
             logger.error(f"Error updating task #{task_id} dispute in Google Sheets: {e}")
