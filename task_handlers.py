@@ -197,14 +197,21 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
     context.user_data.pop("awaiting_dispute_for_task", None)
 
     import sqlite3
+    dispute_msg = f"Оспаривание от {username}: {reason_text}"
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("UPDATE tasks SET is_disputed = 1, rating_comment = rating_comment || ' [Оспаривание от ' || ? || ': ' || ? || ']' WHERE id = ?", (username, reason_text, awaiting_task_id))
+        c.execute("UPDATE tasks SET is_disputed = 1, rating = 0, rating_comment = ? WHERE id = ?", (dispute_msg, awaiting_task_id))
         conn.commit()
         conn.close()
     except Exception as e:
         logger.error(f"Failed to update dispute in DB: {e}")
+
+    if sheets_sync_instance:
+        try:
+            sheets_sync_instance.update_task_dispute(awaiting_task_id, f"{username}: {reason_text}")
+        except Exception as e:
+            logger.error(f"Failed to sync dispute to Google Sheets: {e}")
 
     await update.message.reply_text(
         f"✅ <b>АРГУМЕНТ СОХРАНЁН И ОТПРАВЛЕН!</b>\n\n"
