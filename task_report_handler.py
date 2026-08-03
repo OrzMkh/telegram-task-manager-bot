@@ -301,4 +301,5 @@ bike_report_conversation_handler = ConversationHandler(
         CommandHandler("cancel", cancel_report),
         MessageHandler(filters.Regex(r"^❌ Отмена$"), cancel_report),
     ],
+    allow_reentry=True,
 )
