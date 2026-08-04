@@ -798,144 +798,142 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         }
 
     def get_cities_data(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            try:
-                init_local_master_dbs()
-            except Exception:
-                pass
+        default_cities_fallback = [
+            {"id": 1, "name": "Ташкент", "total_bikes": 1670, "has_bike_types": 0},
+            {"id": 2, "name": "Самарканд", "total_bikes": 200, "has_bike_types": 0},
+            {"id": 3, "name": "Фергана", "total_bikes": 80, "has_bike_types": 0},
+            {"id": 4, "name": "Андижан", "total_bikes": 50, "has_bike_types": 0},
+            {"id": 5, "name": "Бухара", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 6, "name": "Навои", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 7, "name": "Карши", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 8, "name": "Ургенч", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 9, "name": "Нукус", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 10, "name": "Коканд", "total_bikes": 25, "has_bike_types": 0},
+            {"id": 11, "name": "Наманган", "total_bikes": 25, "has_bike_types": 0},
+        ]
+        
+        raw_rows = []
         try:
+            if not os.path.exists(BIKES_DB_PATH):
+                init_local_master_dbs()
             conn = sqlite3.connect(BIKES_DB_PATH)
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            c.execute("""
-                SELECT 
-                    c.id, 
-                    c.name, 
-                    c.total_bikes, 
-                    c.has_bike_types,
-                    COALESCE(r.issued, 0) as issued,
-                    COALESCE(r.broken_bikes, 0) as broken_bikes,
-                    r.report_date
-                FROM cities c
-                LEFT JOIN (
-                    SELECT city, issued, broken_bikes, report_date, MAX(id) as max_id
-                    FROM bike_reports
-                    GROUP BY city
-                ) r ON (c.name LIKE '%' || r.city || '%' OR r.city LIKE '%' || c.name || '%')
-                ORDER BY CASE WHEN c.name LIKE '%Ташкент%' THEN 1 ELSE 2 END, c.id ASC
-            """)
+            c.execute("SELECT c.id, c.name, c.total_bikes, c.has_bike_types FROM cities c ORDER BY CASE WHEN c.name LIKE '%Ташкент%' THEN 1 ELSE 2 END, c.id ASC")
             raw_rows = [dict(r) for r in c.fetchall()]
             conn.close()
-
-            # Live Google Sheets fallback for bike reports (with 15s in-memory cache to prevent 429 Quota Exceeded)
-            now_time = time.time()
-            if now_time - BIKE_SHEETS_CACHE["timestamp"] < 15 and BIKE_SHEETS_CACHE["data"]:
-                sheet_reports = BIKE_SHEETS_CACHE["data"]
-            else:
-                sheet_reports = {}
-                creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-                if creds_json_env:
-                    try:
-                        import gspread
-                        from google.oauth2.service_account import Credentials
-                        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                        s_clean = creds_json_env.strip().strip("'").strip('"')
-                        info = json.loads(s_clean)
-                        if isinstance(info.get("private_key"), str):
-                            info["private_key"] = info["private_key"].replace("\\n", "\n")
-                        creds = Credentials.from_service_account_info(info, scopes=scopes)
-                        client = gspread.authorize(creds)
-                        spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
-                        for ws in spreadsheet.worksheets():
-                            title = ws.title
-                            city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
-                            if not city_name:
-                                continue
-                            rows = ws.get_all_values()
-                            if len(rows) > 1:
-                                latest = rows[-1]
-                                is_new_format = (len(latest) >= 12 and not str(latest[0]).strip().startswith("202"))
-
-                                if is_new_format:
-                                    issued_val = latest[5] if len(latest) > 5 else "0"
-                                    broken_val = latest[8] if len(latest) > 8 else "0"
-                                    date_val = latest[2] if len(latest) > 2 else ""
-                                else:
-                                    headers = [str(h).strip() for h in rows[0]]
-                                    iss_idx = headers.index("В поездке") if "В поездке" in headers else (headers.index("Всего на линии") if "Всего на линии" in headers else 4)
-                                    brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 6)
-                                    date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 1)
-
-                                    issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
-                                    broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
-                                    date_val = latest[date_idx] if len(latest) > date_idx else ""
-
-                                try:
-                                    iss_num = int(issued_val)
-                                except (ValueError, TypeError):
-                                    iss_num = 0
-                                try:
-                                    brok_num = int(broken_val)
-                                except (ValueError, TypeError):
-                                    brok_num = 0
-
-                                sheet_reports[city_name.lower()] = {
-                                    "issued": iss_num,
-                                    "broken": brok_num,
-                                    "report_date": date_val
-                                }
-                        BIKE_SHEETS_CACHE["data"] = sheet_reports
-                        BIKE_SHEETS_CACHE["timestamp"] = now_time
-                    except Exception as e:
-                        logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
-                        if BIKE_SHEETS_CACHE["data"]:
-                            sheet_reports = BIKE_SHEETS_CACHE["data"]
-
-            result = []
-            for r in raw_rows:
-                tot = int(r.get("total_bikes") or 0)
-                c_name_lower = r["name"].lower()
-
-                iss = 0
-                broken = 0
-                r_date = r.get("report_date")
-
-                try:
-                    iss = int(r.get("issued") or 0)
-                    broken = int(r.get("broken_bikes") or 0)
-                except (ValueError, TypeError):
-                    pass
-
-                # Always prioritize live Google Sheets report data if available
-                for sheet_city, rep_data in sheet_reports.items():
-                    if sheet_city in c_name_lower or c_name_lower in sheet_city:
-                        try:
-                            iss = int(rep_data["issued"])
-                        except Exception:
-                            pass
-                        try:
-                            broken = int(rep_data["broken"])
-                        except Exception:
-                            pass
-                        r_date = rep_data["report_date"]
-                        break
-
-                pct = round((iss / tot) * 100) if tot > 0 else 0
-                pct = min(pct, 100)
-
-                result.append({
-                    "id": r["id"],
-                    "name": r["name"],
-                    "total_bikes": tot,
-                    "issued": iss,
-                    "percent_online": pct,
-                    "broken_bikes": broken,
-                    "report_date": r_date
-                })
-            return result
         except Exception as e:
-            logger.error(f"Failed to get cities: {e}")
-            return []
+            logger.error(f"Error querying cities from db: {e}")
+
+        if not raw_rows:
+            raw_rows = default_cities_fallback
+
+        # Live Google Sheets fallback for bike reports (with 15s in-memory cache to prevent 429 Quota Exceeded)
+        now_time = time.time()
+        sheet_reports = {}
+        if now_time - BIKE_SHEETS_CACHE["timestamp"] < 15 and BIKE_SHEETS_CACHE["data"]:
+            sheet_reports = BIKE_SHEETS_CACHE["data"]
+        else:
+            creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+            if creds_json_env:
+                try:
+                    import gspread
+                    from google.oauth2.service_account import Credentials
+                    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                    s_clean = creds_json_env.strip().strip("'").strip('"')
+                    info = json.loads(s_clean)
+                    if isinstance(info.get("private_key"), str):
+                        info["private_key"] = info["private_key"].replace("\\n", "\n")
+                    creds = Credentials.from_service_account_info(info, scopes=scopes)
+                    client = gspread.authorize(creds)
+                    spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                    for ws in spreadsheet.worksheets():
+                        title = ws.title
+                        city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
+                        if not city_name:
+                            continue
+                        rows = ws.get_all_values()
+                        if len(rows) > 1:
+                            latest = rows[-1]
+                            is_new_format = (len(latest) >= 12 and not str(latest[0]).strip().startswith("202"))
+
+                            if is_new_format:
+                                issued_val = latest[5] if len(latest) > 5 else "0"
+                                broken_val = latest[8] if len(latest) > 8 else "0"
+                                date_val = latest[2] if len(latest) > 2 else ""
+                            else:
+                                headers = [str(h).strip() for h in rows[0]]
+                                iss_idx = headers.index("В поездке") if "В поездке" in headers else (headers.index("Всего на линии") if "Всего на линии" in headers else 4)
+                                brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 6)
+                                date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 1)
+
+                                issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
+                                broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
+                                date_val = latest[date_idx] if len(latest) > date_idx else ""
+
+                            try:
+                                iss_num = int(issued_val)
+                            except (ValueError, TypeError):
+                                iss_num = 0
+                            try:
+                                brok_num = int(broken_val)
+                            except (ValueError, TypeError):
+                                brok_num = 0
+
+                            sheet_reports[city_name.lower()] = {
+                                "issued": iss_num,
+                                "broken": brok_num,
+                                "report_date": date_val
+                            }
+                    BIKE_SHEETS_CACHE["data"] = sheet_reports
+                    BIKE_SHEETS_CACHE["timestamp"] = now_time
+                except Exception as e:
+                    logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
+                    if BIKE_SHEETS_CACHE["data"]:
+                        sheet_reports = BIKE_SHEETS_CACHE["data"]
+
+        result = []
+        for r in raw_rows:
+            tot = int(r.get("total_bikes") or 0)
+            c_name_lower = r["name"].lower()
+
+            iss = 0
+            broken = 0
+            r_date = r.get("report_date")
+
+            try:
+                iss = int(r.get("issued") or 0)
+                broken = int(r.get("broken_bikes") or 0)
+            except (ValueError, TypeError):
+                pass
+
+            # Always prioritize live Google Sheets report data if available
+            for sheet_city, rep_data in sheet_reports.items():
+                if sheet_city in c_name_lower or c_name_lower in sheet_city:
+                    try:
+                        iss = int(rep_data["issued"])
+                    except Exception:
+                        pass
+                    try:
+                        broken = int(rep_data["broken"])
+                    except Exception:
+                        pass
+                    r_date = rep_data["report_date"]
+                    break
+
+            pct = round((iss / tot) * 100) if tot > 0 else 0
+            pct = min(pct, 100)
+
+            result.append({
+                "id": r["id"],
+                "name": r["name"],
+                "total_bikes": tot,
+                "issued": iss,
+                "percent_online": pct,
+                "broken_bikes": broken,
+                "report_date": r_date
+            })
+        return result
 
     def update_city_total(self, city_id: int, total_bikes: int):
         if not os.path.exists(BIKES_DB_PATH):
@@ -1025,8 +1023,27 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
                     date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
                     stat_idx = headers.index("Статус") if "Статус" in headers else 6
+                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
+                    disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
+                    final_rat_idx = headers.index("Последняя оценка") if "Последняя оценка" in headers else 9
 
                     for i, r in enumerate(rows[1:], start=1):
+                        init_rat = r[init_rat_idx] if len(r) > init_rat_idx else "0"
+                        disp_val = r[disp_idx] if len(r) > disp_idx else ""
+                        final_rat = r[final_rat_idx] if len(r) > final_rat_idx else ""
+
+                        try:
+                            init_num = int(str(init_rat).replace("/5", "").strip())
+                        except Exception:
+                            init_num = 0
+
+                        try:
+                            final_num = int(str(final_rat).replace("/5", "").strip())
+                        except Exception:
+                            final_num = 0
+
+                        is_disputed = bool(disp_val.strip() and not final_rat.strip())
+
                         tasks.append({
                             "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
                             "task_text": r[text_idx] if len(r) > text_idx else "",
@@ -1037,8 +1054,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             "status": r[stat_idx] if len(r) > stat_idx else "Active",
                             "priority": "Medium",
                             "city": "Ташкент",
-                            "rating": 0,
-                            "rating_comment": ""
+                            "rating": final_num if final_num > 0 else (init_num if not is_disputed else 0),
+                            "initial_rating": init_num,
+                            "final_rating": final_num,
+                            "is_disputed": is_disputed,
+                            "rating_comment": disp_val
                         })
                 res_tasks = tasks[::-1]
                 TASKS_SHEETS_CACHE["data"] = res_tasks
@@ -1060,7 +1080,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
             c.execute(
                 "INSERT INTO tasks (task_text, assignee, author, sla_deadline, created_at, status, priority, city) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (task_text, assignee, "Master Hub Admin", sla_deadline, now_str, "Active", priority, city)
+                (task_text, assignee, "Руководитель", sla_deadline, now_str, "Active", priority, city)
             )
             task_id = c.lastrowid
             conn.commit()
@@ -1132,13 +1152,19 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 client = gspread.authorize(creds)
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
-                cell = sheet.find(str(task_id))
-                if cell:
-                    headers = [str(h).strip() for h in sheet.row_values(1)]
+                headers = [str(h).strip() for h in sheet.row_values(1)]
+                id_col_vals = sheet.col_values(1)
+                target_row = None
+                str_id = str(task_id).strip()
+                for idx, val in enumerate(id_col_vals):
+                    if str(val).strip() == str_id:
+                        target_row = idx + 1
+                        break
+                if target_row:
                     stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
-                    sheet.update_cell(cell.row, stat_col, "Done")
+                    sheet.update_cell(target_row, stat_col, "Done")
                     if not task_text:
-                        row_vals = sheet.row_values(cell.row)
+                        row_vals = sheet.row_values(target_row)
                         text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
                         ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
                         task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
@@ -1147,36 +1173,19 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Failed to complete task in Google Sheets: {e}")
 
-        # Send Telegram rating notification
+        # Send completion notification to Telegram group
         try:
             bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
             chat_id = "-1002638798110"
+            safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             msg_text = (
-                f"✅ <b>ЗАДАЧА #{task_id} ВЫПОЛНЕНА!</b>\n\n"
-                f"📋 <b>Описание:</b> {task_text or 'Выполнено'}\n"
-                f"👤 <b>Исполнитель:</b> {assignee or 'Команда'}\n\n"
-                f"⭐️ <b>Пожалуйста, оцените качество работы:</b>"
+                f"✅ <b>ЗАДАЧА #{task_id} ЗАВЕРШЕНА!</b>\n\n"
+                f"📌 <b>Задача:</b> {safe_task}\n"
+                f"👤 <b>Исполнитель:</b> {safe_asgn}\n\n"
+                f"⏳ <i>Ожидает оценки руководителя в приложении...</i>"
             )
-            keyboard = {
-                "inline_keyboard": [
-                    [
-                        {"text": "⭐️ 1", "callback_data": f"rate_task_{task_id}_1"},
-                        {"text": "⭐️ 2", "callback_data": f"rate_task_{task_id}_2"},
-                        {"text": "⭐️ 3", "callback_data": f"rate_task_{task_id}_3"},
-                        {"text": "⭐️ 4", "callback_data": f"rate_task_{task_id}_4"},
-                        {"text": "⭐️ 5", "callback_data": f"rate_task_{task_id}_5"}
-                    ],
-                    [
-                        {"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}
-                    ]
-                ]
-            }
-            payload = {
-                "chat_id": chat_id,
-                "text": msg_text,
-                "parse_mode": "HTML",
-                "reply_markup": keyboard
-            }
+            payload = {"chat_id": chat_id, "text": msg_text, "parse_mode": "HTML"}
             req = urllib.request.Request(
                 f"https://api.telegram.org/bot{bot_token}/sendMessage",
                 data=json.dumps(payload).encode("utf-8"),
@@ -1184,83 +1193,139 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             )
             urllib.request.urlopen(req)
         except Exception as e:
-            logger.error(f"Failed to send task rating prompt to Telegram: {e}")
+            logger.error(f"Failed to send completion notification to Telegram: {e}")
 
     def rate_task(self, task_id: int, rating: int, rating_comment: str = ""):
-        if not os.path.exists(TASKS_DB_PATH):
-            return
         task_text = ""
         assignee = ""
-        try:
-            # Step 1: read task data BEFORE update
-            conn = sqlite3.connect(TASKS_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("SELECT task_text, assignee FROM tasks WHERE id = ?", (task_id,))
-            row = c.fetchone()
-            if row:
-                task_text = row["task_text"]
-                assignee = row["assignee"]
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to read task for rating: {e}")
+        prev_init_rating = 0
+        was_disputed = False
 
-        try:
-            # Step 2: update rating
-            conn2 = sqlite3.connect(TASKS_DB_PATH)
-            c2 = conn2.cursor()
-            c2.execute("UPDATE tasks SET rating = ?, rating_comment = ?, is_disputed = 0 WHERE id = ?", (rating, rating_comment, task_id))
-            conn2.commit()
-            conn2.close()
-        except Exception as e:
-            logger.error(f"Failed to save rating: {e}")
-            return
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                sheet = spreadsheet.sheet1
+                headers = [str(h).strip() for h in sheet.row_values(1)]
+                id_col_vals = sheet.col_values(1)
+                target_row = None
+                str_id = str(task_id).strip()
+                for idx, val in enumerate(id_col_vals):
+                    if str(val).strip() == str_id:
+                        target_row = idx + 1
+                        break
+                if target_row:
+                    row_vals = sheet.row_values(target_row)
+                    text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+                    ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
+                    disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
 
+                    task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
+                    assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
+                    raw_init = row_vals[init_rat_idx] if len(row_vals) > init_rat_idx else "0"
+                    raw_disp = row_vals[disp_idx] if len(row_vals) > disp_idx else ""
+
+                    try:
+                        prev_init_rating = int(str(raw_init).replace("/5", "").strip())
+                    except Exception:
+                        prev_init_rating = 0
+
+                    if raw_disp.strip():
+                        was_disputed = True
+
+                    init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
+                    final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
+
+                    if not raw_init.strip() or raw_init.strip() == "0":
+                        sheet.update_cell(target_row, init_col, f"{rating}/5")
+                        prev_init_rating = rating
+                    sheet.update_cell(target_row, final_col, f"{rating}/5")
+
+                TASKS_SHEETS_CACHE["timestamp"] = 0
+            except Exception as e:
+                logger.error(f"Failed to update task rating in Google Sheets: {e}")
+
+        # Send Telegram notification
         try:
-            # Step 3: send Telegram notification
-            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
+            bot_token = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
             chat_id = "-1002638798110"
-            stars_str = "\u2b50" * rating
-            score_bar = ["\u2605" if i < rating else "\u2606" for i in range(5)]
-            score_display = "".join(score_bar)
+            stars_str = "⭐️" * rating
 
-            # Escape HTML special chars to prevent Telegram 400 Bad Request
-            safe_task = task_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            safe_asgn = assignee.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            safe_cmt = rating_comment.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            if not safe_asgn.startswith("@") and not safe_asgn.startswith("<b>"):
+                tag_asgn = f"<b>{safe_asgn}</b>"
+            else:
+                tag_asgn = safe_asgn
 
-            msg_text = (
-                f"\u2b50 <b>ОЦЕНКА ЗА ЗАДАЧУ #{task_id}</b>\n\n"
-                f"\U0001f4cc <b>Задача:</b> {safe_task}\n"
-                f"\U0001f464 <b>Исполнитель:</b> {safe_asgn}\n"
-                f"\U0001f451 <b>Оценка:</b> {stars_str} ({rating}/5)\n"
-                f"\U0001f4ca <b>Рейтинг:</b> {score_display}\n"
-            )
-            if safe_cmt:
-                msg_text += f"\U0001f4ac <b>Комментарий:</b> \u00ab{safe_cmt}\u00bb\n"
-
-            msg_text += "\n\U0001f4a1 <i>Если не согласен с оценкой \u2014 нажми кнопку ниже:</i>"
+            if was_disputed:
+                if rating > prev_init_rating and prev_init_rating > 0:
+                    old_stars = "⭐️" * prev_init_rating
+                    msg_text = (
+                        f"⚖️ <b>РЕЗУЛЬТАТ ОСПАРИВАНИЯ ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"🎉 {tag_asgn}, <b>вы выиграли спор! Ваша оценка повышена!</b>\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"📉 <b>Первоначальная оценка:</b> {old_stars} ({prev_init_rating}/5)\n"
+                        f"📈 <b>Новая (финальная) оценка:</b> {stars_str} ({rating}/5)"
+                    )
+                else:
+                    msg_text = (
+                        f"⚖️ <b>РЕЗУЛЬТАТ ОСПАРИВАНИЯ ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"❌ {tag_asgn}, <b>вы не выиграли спор. Оценка оставлена без изменений.</b>\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"👑 <b>Итоговая оценка:</b> {stars_str} ({rating}/5)"
+                    )
+                keyboard = None
+            else:
+                if rating >= 5:
+                    msg_text = (
+                        f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"👤 <b>Исполнитель:</b> {tag_asgn}\n"
+                        f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
+                        f"🎉 <i>Отличная работа! Высокая оценка (5/5) без возможности оспаривания.</i>"
+                    )
+                    keyboard = None
+                else:
+                    msg_text = (
+                        f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"👤 <b>Исполнитель:</b> {tag_asgn}\n"
+                        f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
+                        f"⚖️ <i>Исполнитель {tag_asgn} может оспорить эту оценку, если не согласен:</i>"
+                    )
+                    keyboard = {
+                        "inline_keyboard": [
+                            [{"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}]
+                        ]
+                    }
 
             payload = {
                 "chat_id": chat_id,
                 "text": msg_text,
                 "parse_mode": "HTML",
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [{"text": "\u2696\ufe0f Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}]
-                    ]
-                }
+                "reply_markup": keyboard
             }
 
             req = urllib.request.Request(
                 f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers={"Content-Type": "application/json; charset=utf-8"}
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
             )
-            resp = urllib.request.urlopen(req)
-            logger.info(f"Rating notification sent for task #{task_id}: {resp.read().decode('utf-8')[:100]}")
+            urllib.request.urlopen(req)
         except Exception as e:
-            logger.error(f"Failed to send rating notification: {e}")
+            logger.error(f"Failed to send rating notification to Telegram: {e}")
+
 
     def get_tasks_dynamics(self, date_from=None, date_to=None, assignee_filter=None):
         """Return per-day task dynamics for the selected period and assignee."""

@@ -127,6 +127,24 @@ def init_db(db_path="tasks.db"):
                 created_at TEXT NOT NULL
             )
         """)
+        # Ensure rating and dispute columns exist
+        cols_to_check = [
+            ("priority", "TEXT DEFAULT 'Medium'"),
+            ("city", "TEXT DEFAULT 'Ташкент'"),
+            ("rating", "INTEGER DEFAULT 0"),
+            ("rating_comment", "TEXT"),
+            ("initial_rating", "INTEGER DEFAULT 0"),
+            ("final_rating", "INTEGER DEFAULT 0"),
+            ("is_disputed", "INTEGER DEFAULT 0")
+        ]
+        cursor.execute("PRAGMA table_info(tasks)")
+        existing_cols = [row[1] for row in cursor.fetchall()]
+        for col_name, col_type in cols_to_check:
+            if col_name not in existing_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE tasks ADD COLUMN {col_name} {col_type}")
+                except Exception:
+                    pass
         conn.commit()
 
 def add_task(task_text: str, assignee: str, author: str, sla_deadline: str, created_at: str, db_path="tasks.db") -> dict:
