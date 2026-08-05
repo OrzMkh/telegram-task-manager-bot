@@ -25,10 +25,15 @@ if os.path.exists(os.path.join(BASE_DIR, "web_app", "index.html")):
 else:
     WEB_APP_DIR = BASE_DIR
 
-BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")
+BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")  # Rich bot DB (local fallback only)
 TASKS_DB_PATH = os.path.join(BASE_DIR, "tasks.db")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
-MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "7890").strip()
+MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "9449").strip()
+
+# URLs to the bot services on Render for user management sync
+RICH_BOT_URL = os.getenv("RICH_BOT_URL", "").strip().rstrip("/")
+FLEET_BOT_URL = os.getenv("FLEET_BOT_URL", "").strip().rstrip("/")
+INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "master_hub_secret_2025").strip()
 
 try:
     import psycopg2
@@ -573,6 +578,22 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             self.send_json_response(self.get_team_leads_task_stats(month))
         elif path == "/api/users":
             self.send_json_response(self.get_users_data())
+        elif path == "/api/users/rich":
+            self.send_json_response(self.fetch_bot_users("rich"))
+        elif path == "/api/users/fleet":
+            self.send_json_response(self.fetch_bot_users("fleet"))
+        elif path == "/api/debug/bots":
+            rich_users = self.fetch_bot_users("rich")
+            fleet_users = self.fetch_bot_users("fleet")
+            self.send_json_response({
+                "rich_bot_url": RICH_BOT_URL if RICH_BOT_URL else "NOT_SET",
+                "fleet_bot_url": FLEET_BOT_URL if FLEET_BOT_URL else "NOT_SET",
+                "internal_secret_configured": bool(INTERNAL_API_SECRET),
+                "rich_users_count": len(rich_users),
+                "rich_users": rich_users,
+                "fleet_users_count": len(fleet_users),
+                "fleet_users": fleet_users,
+            })
         elif path == "/api/rich/cities":
             self.send_json_response(self.get_rich_cities())
         elif path == "/api/rich/reports":
@@ -630,8 +651,26 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         elif path == "/api/users/toggle_access":
             user_id = payload.get("user_id")
             is_active = payload.get("is_active", 1)
+            bot = payload.get("bot", "rich")
             if user_id is not None:
-                self.toggle_user_access(user_id, is_active)
+                self.call_bot_api(bot, "/api/users/toggle_access", {"user_id": user_id, "is_active": is_active})
+                self.send_json_response({"status": "ok"})
+            else:
+                self.send_json_response({"error": "Invalid params"}, status=400)
+        elif path == "/api/users/change_role":
+            user_id = payload.get("user_id")
+            role = payload.get("role", "partner")
+            bot = payload.get("bot", "rich")
+            if user_id is not None and role in ("admin", "partner"):
+                self.call_bot_api(bot, "/api/users/change_role", {"user_id": user_id, "role": role})
+                self.send_json_response({"status": "ok"})
+            else:
+                self.send_json_response({"error": "Invalid params"}, status=400)
+        elif path == "/api/users/delete":
+            user_id = payload.get("user_id")
+            bot = payload.get("bot", "rich")
+            if user_id is not None:
+                self.call_bot_api(bot, "/api/users/delete", {"user_id": user_id})
                 self.send_json_response({"status": "ok"})
             else:
                 self.send_json_response({"error": "Invalid params"}, status=400)
@@ -980,26 +1019,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         return res
 
     def get_tasks_data(self):
-        if os.path.exists(TASKS_DB_PATH):
-            try:
-                conn = sqlite3.connect(TASKS_DB_PATH)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT id, task_text, assignee, author, sla_deadline, created_at, status, COALESCE(priority, 'Medium') as priority, COALESCE(city, 'Ташкент') as city, COALESCE(rating, 0) as rating, COALESCE(rating_comment, '') as rating_comment FROM tasks ORDER BY id DESC LIMIT 50")
-                rows = [dict(r) for r in c.fetchall()]
-                conn.close()
-                if rows:
-                    return rows
-            except Exception as e:
-                logger.error(f"Failed to get tasks from sqlite: {e}")
-
-        # Fallback: Read live tasks from Google Sheets (with 15s cache to prevent 429 Quota Exceeded)
-        now_time = time.time()
-        if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
-            return TASKS_SHEETS_CACHE["data"]
-
         creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        now_time = time.time()
         if creds_json_env:
+            if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
+                return TASKS_SHEETS_CACHE["data"]
             try:
                 import gspread
                 from google.oauth2.service_account import Credentials
@@ -1025,9 +1049,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     stat_idx = headers.index("Статус") if "Статус" in headers else 6
                     init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
                     disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
-                    final_rat_idx = headers.index("Последняя оценка") if "Последняя оценка" in headers else 9
+                    final_rat_idx = headers.index("Итоговая оценка не меняется") if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") if "Последняя оценка" in headers else 9)
 
                     for i, r in enumerate(rows[1:], start=1):
+                        if not any(str(cell).strip() for cell in r):
+                            continue
                         init_rat = r[init_rat_idx] if len(r) > init_rat_idx else "0"
                         disp_val = r[disp_idx] if len(r) > disp_idx else ""
                         final_rat = r[final_rat_idx] if len(r) > final_rat_idx else ""
@@ -1043,6 +1069,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             final_num = 0
 
                         is_disputed = bool(disp_val.strip() and not final_rat.strip())
+                        status_val = r[stat_idx] if len(r) > stat_idx else "Active"
+                        if is_disputed:
+                            status_val = "Disputed"
 
                         tasks.append({
                             "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
@@ -1051,7 +1080,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             "author": r[aut_idx] if len(r) > aut_idx else "",
                             "sla_deadline": r[sla_idx] if len(r) > sla_idx else "",
                             "created_at": r[date_idx] if len(r) > date_idx else "",
-                            "status": r[stat_idx] if len(r) > stat_idx else "Active",
+                            "status": status_val,
                             "priority": "Medium",
                             "city": "Ташкент",
                             "rating": final_num if final_num > 0 else (init_num if not is_disputed else 0),
@@ -1063,11 +1092,25 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 res_tasks = tasks[::-1]
                 TASKS_SHEETS_CACHE["data"] = res_tasks
                 TASKS_SHEETS_CACHE["timestamp"] = now_time
-                return res_tasks
+                if res_tasks:
+                    return res_tasks
             except Exception as e:
                 logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
                 if TASKS_SHEETS_CACHE["data"]:
                     return TASKS_SHEETS_CACHE["data"]
+
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT id, task_text, assignee, author, sla_deadline, created_at, status, COALESCE(priority, 'Medium') as priority, COALESCE(city, 'Ташкент') as city, COALESCE(rating, 0) as rating, COALESCE(rating_comment, '') as rating_comment FROM tasks ORDER BY id DESC LIMIT 50")
+                rows = [dict(r) for r in c.fetchall()]
+                conn.close()
+                if rows:
+                    return rows
+            except Exception as e:
+                logger.error(f"Failed to get tasks from sqlite: {e}")
 
         return []
 
@@ -1563,86 +1606,80 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             return []
 
     def get_team_leads_task_stats(self, month=None):
-        date_pattern1 = None
-        date_pattern2 = None
-        if month and len(month.split("-")) == 2:
-            yyyy, mm = month.split("-")
-            date_pattern1 = f"%.{mm}.{yyyy}%"
-            date_pattern2 = f"{yyyy}-{mm}%"
+        if not month or len(month.split("-")) != 2:
+            month = datetime.datetime.now().strftime("%Y-%m")
+        
+        yyyy, mm = month.split("-")
+        target_dot = f".{mm}.{yyyy}"
+        target_dash = f"{yyyy}-{mm}"
 
         team_leads = [
-            {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "patterns": ["%isslaamov%", "%isslamov%", "%Ильясбек%", "%ilyas%"]},
-            {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "patterns": ["%axi0603%", "%axi%", "%мужахид%", "%mujahid%"]},
-            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "patterns": ["%Silent_trickster%", "%silenttrickster%", "%jaxa%", "%жаха%", "%jakha%"]}
+            {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "patterns": ["isslaamov", "isslamov", "ильясбек", "ilyas"]},
+            {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "patterns": ["axi0603", "axi", "мужахид", "mujahid"]},
+            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "patterns": ["silent_trickster", "silenttrickster", "jaxa", "жаха", "jakha"]}
         ]
+        all_tasks = self.get_tasks_data()
         results = []
-        if os.getenv("DATABASE_URL") or os.path.exists(TASKS_DB_PATH):
-            try:
-                conn = sqlite3.connect(TASKS_DB_PATH)
-                c = conn.cursor()
-                for tl in team_leads:
-                    conds_base = " OR ".join(["assignee LIKE ?" for _ in tl["patterns"]])
-                    params_base = list(tl["patterns"])
 
-                    if date_pattern1 and date_pattern2:
-                        query_tot = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_tot, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_tot = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base})"
-                        c.execute(query_tot, params_base)
-                    total = c.fetchone()[0]
+        for tl in team_leads:
+            tl_tasks = []
+            for t in all_tasks:
+                asgn = str(t.get("assignee", "")).lower()
+                if not any(p in asgn for p in tl["patterns"]):
+                    continue
+                
+                created = str(t.get("created_at", "")).strip()
+                if created and (len(created) >= 7):
+                    if target_dot not in created and target_dash not in created:
+                        continue
+                
+                tl_tasks.append(t)
+            
+            total = len(tl_tasks)
+            done = len([t for t in tl_tasks if str(t.get("status", "")).strip().lower() in ("done", "completed")])
+            active = total - done
+            ratings = [t.get("rating", 0) for t in tl_tasks if t.get("rating", 0) > 0]
+            avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+            percent = round((done / total) * 100) if total > 0 else 0
 
-                    if date_pattern1 and date_pattern2:
-                        query_act = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status != 'Done' AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_act, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_act = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status != 'Done'"
-                        c.execute(query_act, params_base)
-                    active = c.fetchone()[0]
+            results.append({
+                "name": tl["name"],
+                "role": tl["role"],
+                "total": total,
+                "active": active,
+                "done": done,
+                "percent": percent,
+                "avg_rating": avg_rating
+            })
 
-                    if date_pattern1 and date_pattern2:
-                        query_done = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status = 'Done' AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_done, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_done = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status = 'Done'"
-                        c.execute(query_done, params_base)
-                    done = c.fetchone()[0]
-
-                    if date_pattern1 and date_pattern2:
-                        query_rate = f"SELECT AVG(COALESCE(rating, 5)) FROM tasks WHERE ({conds_base}) AND status = 'Done' AND rating > 0 AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_rate, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_rate = f"SELECT AVG(COALESCE(rating, 5)) FROM tasks WHERE ({conds_base}) AND status = 'Done' AND rating > 0"
-                        c.execute(query_rate, params_base)
-                    avg_r = c.fetchone()[0]
-                    avg_rating = round(float(avg_r), 1) if (avg_r is not None and done > 0) else 0.0
-
-                    percent = round((done / total * 100)) if total > 0 else 0
-                    results.append({
-                        "name": tl["name"],
-                        "role": tl["role"],
-                        "total": total,
-                        "active": active,
-                        "done": done,
-                        "percent": percent,
-                        "avg_rating": avg_rating
-                    })
-                conn.close()
-                return results
-            except Exception as e:
-                logger.error(f"Failed to get team leads task stats: {e}")
-
-        return [
-            {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "total": 0, "active": 0, "done": 0, "percent": 0, "avg_rating": 0.0},
-            {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "total": 0, "active": 0, "done": 0, "percent": 0, "avg_rating": 0.0},
-            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "total": 0, "active": 0, "done": 0, "percent": 0, "avg_rating": 0.0}
-        ]
+        return results
 
     def get_users_data(self):
-        if not os.path.exists(BIKES_DB_PATH):
+        return self.fetch_bot_users("rich")
+
+    def fetch_bot_users(self, bot: str):
+        """Fetch user list from Rich or Fleet bot service via HTTP."""
+        base_url = RICH_BOT_URL if bot == "rich" else FLEET_BOT_URL
+        if not base_url:
+            # Fallback: try local DB if bot URL not configured
+            db = BIKES_DB_PATH
+            return self._read_users_from_db(db)
+        try:
+            req = urllib.request.Request(
+                f"{base_url}/api/users",
+                headers={"X-Internal-Secret": INTERNAL_API_SECRET}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            logger.error(f"Failed to fetch users from {bot} bot ({base_url}): {e}")
+            return []
+
+    def _read_users_from_db(self, db_path: str):
+        if not os.path.exists(db_path):
             return []
         try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
+            conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
             c.execute("SELECT user_id, username, full_name, role, is_active FROM users ORDER BY rowid ASC")
@@ -1650,85 +1687,166 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             conn.close()
             return rows
         except Exception as e:
-            logger.error(f"Failed to get users: {e}")
+            logger.error(f"Failed to read users from DB {db_path}: {e}")
             return []
+
+    def call_bot_api(self, bot: str, endpoint: str, payload: dict):
+        """Send POST request to Rich or Fleet bot service via HTTP."""
+        base_url = RICH_BOT_URL if bot == "rich" else FLEET_BOT_URL
+        if not base_url:
+            logger.warning(f"Bot URL for '{bot}' not configured. Action skipped.")
+            return
+        try:
+            data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            req = urllib.request.Request(
+                f"{base_url}{endpoint}",
+                data=data,
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Internal-Secret": INTERNAL_API_SECRET
+                }
+            )
+            urllib.request.urlopen(req, timeout=8)
+        except Exception as e:
+            logger.error(f"Failed to call {bot} bot API {endpoint}: {e}")
+
+    def get_users_for_db(self, db_path: str):
+        return self._read_users_from_db(db_path)
 
     def toggle_user_access(self, user_id: int, is_active: int):
-        if not os.path.exists(BIKES_DB_PATH):
-            return
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            c = conn.cursor()
-            c.execute("UPDATE users SET is_active = ? WHERE user_id = ?", (is_active, user_id))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to toggle user access: {e}")
+        self.call_bot_api("rich", "/api/users/toggle_access", {"user_id": user_id, "is_active": is_active})
+
+    def toggle_user_access_db(self, user_id: int, is_active: int, db_path: str):
+        pass  # Now handled via call_bot_api
+
+    def change_user_role_db(self, user_id: int, role: str, db_path: str):
+        pass  # Now handled via call_bot_api
+
+    def delete_user_db(self, user_id: int, db_path: str):
+        pass  # Now handled via call_bot_api
 
     def get_rich_cities(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            return []
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("SELECT id, name, total_bikes FROM rich_cities ORDER BY id ASC")
-            cities = [dict(r) for r in c.fetchall()]
+        cities = [{"id": 1, "name": "Ташкент", "total_bikes": 50, "issued": 0, "percent_online": 0}]
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                try:
+                    sheet = spreadsheet.worksheet("Rich Ташкент")
+                except Exception:
+                    sheet = spreadsheet.worksheet("Rich")
+                rows = sheet.get_all_values()
+                if len(rows) > 1:
+                    for row in reversed(rows[1:]):
+                        if any(str(cell).strip() for cell in row):
+                            n_trip_raw = row[5] if len(row) > 5 else (row[3] if len(row) > 3 else "0")
+                            last_date_raw = row[2] if len(row) > 2 else ""
+                            import re
+                            m = re.search(r"\d+", str(n_trip_raw))
+                            issued_val = int(m.group(0)) if m else 0
+                            pct = round((issued_val / 50) * 100)
+                            cities[0]["issued"] = issued_val
+                            cities[0]["percent_online"] = min(pct, 100)
+                            cities[0]["last_updated"] = last_date_raw if last_date_raw else datetime.datetime.now().strftime("%d.%m.%Y")
+                            break
+                    return cities
+            except Exception as e:
+                logger.error(f"Failed to read Rich cities from Google Sheets: {e}")
 
-            for city in cities:
-                clean_cname = city['name'].replace('(Rich)', '').strip()
-                c.execute("SELECT issued FROM rich_reports WHERE city LIKE ? OR city = ? ORDER BY id DESC LIMIT 1", (f"%{clean_cname}%", city['name']))
-                rep = c.fetchone()
-                issued = int(rep['issued']) if rep and rep['issued'] is not None and str(rep['issued']).isdigit() else 0
-                pct = round((issued / city['total_bikes']) * 100) if city['total_bikes'] > 0 and issued > 0 else 0
-                city['issued'] = issued
-                city['percent_online'] = pct
+        if os.path.exists(BIKES_DB_PATH):
+            try:
+                conn = sqlite3.connect(BIKES_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT id, name, total_bikes FROM rich_cities ORDER BY id ASC")
+                db_cities = [dict(r) for r in c.fetchall()]
+                if db_cities:
+                    cities = db_cities
+                for city in cities:
+                    clean_cname = city['name'].replace('(Rich)', '').strip()
+                    c.execute("SELECT total_in_trip, issued FROM rich_reports WHERE city LIKE ? OR city = ? ORDER BY id DESC LIMIT 1", (f"%{clean_cname}%", city['name']))
+                    rep = c.fetchone()
+                    issued = int(rep['total_in_trip']) if rep and rep['total_in_trip'] is not None and str(rep['total_in_trip']).isdigit() else (int(rep['issued']) if rep and rep['issued'] is not None and str(rep['issued']).isdigit() else 0)
+                    t_bikes = city.get('total_bikes', 50)
+                    pct = round((issued / t_bikes) * 100) if t_bikes > 0 and issued > 0 else 0
+                    city['issued'] = issued
+                    city['percent_online'] = min(pct, 100)
+                conn.close()
+                return cities
+            except Exception as e:
+                logger.error(f"Failed to get rich cities from DB: {e}")
 
-            conn.close()
-            return cities
-        except Exception as e:
-            logger.error(f"Failed to get rich cities: {e}")
-            return []
-
-    def add_rich_city(self, name: str, total_bikes: int):
-        if not os.path.exists(BIKES_DB_PATH):
-            return
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            c = conn.cursor()
-            now_str = datetime.datetime.now().strftime("%d.%m.%Y")
-            c.execute("INSERT OR IGNORE INTO rich_cities (name, total_bikes, created_at) VALUES (?, ?, ?)", (name, total_bikes, now_str))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to add rich city: {e}")
-
-    def update_rich_city(self, city_id: int, total_bikes: int):
-        if not os.path.exists(BIKES_DB_PATH):
-            return
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            c = conn.cursor()
-            c.execute("UPDATE rich_cities SET total_bikes = ? WHERE id = ?", (total_bikes, city_id))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to update rich city: {e}")
+        return cities
 
     def get_rich_reports(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            return []
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("SELECT id, username, city, report_date, issued, returned, comment FROM rich_reports ORDER BY id DESC LIMIT 20")
-            rows = [dict(r) for r in c.fetchall()]
-            conn.close()
-            return rows
-        except Exception as e:
-            logger.error(f"Failed to get rich reports: {e}")
-            return []
+        reports = []
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                try:
+                    sheet = spreadsheet.worksheet("Rich Ташкент")
+                except Exception:
+                    sheet = spreadsheet.worksheet("Rich")
+                rows = sheet.get_all_values()
+                if len(rows) > 1:
+                    for row in reversed(rows[1:]):
+                        if not any(str(cell).strip() for cell in row):
+                            continue
+                        rep_id = row[0] if len(row) > 0 else ""
+                        city = row[1] if len(row) > 1 else "Ташкент"
+                        rep_date = row[2] if len(row) > 2 else ""
+                        issued = row[3] if len(row) > 3 else "0"
+                        returned = row[4] if len(row) > 4 else "0"
+                        comment = row[10] if len(row) > 10 else "-"
+                        username = row[11] if len(row) > 11 else "Партнёр"
+                        reports.append({
+                            "id": rep_id,
+                            "city": city,
+                            "report_date": rep_date,
+                            "issued": issued,
+                            "returned": returned,
+                            "comment": comment,
+                            "username": username
+                        })
+                        if len(reports) >= 20:
+                            break
+                    return reports
+            except Exception as e:
+                logger.error(f"Failed to read Rich reports from Google Sheets: {e}")
+
+        if os.path.exists(BIKES_DB_PATH):
+            try:
+                conn = sqlite3.connect(BIKES_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT id, username, city, report_date, issued, returned, comment FROM rich_reports ORDER BY id DESC LIMIT 20")
+                rows = [dict(r) for r in c.fetchall()]
+                conn.close()
+                return rows
+            except Exception as e:
+                logger.error(f"Failed to get rich reports: {e}")
+
+        return reports
 
     def get_rich_stats(self):
         tot_rich_fleet = 0
