@@ -205,23 +205,33 @@ async def _process_and_create_task(update: Update, task_text: str):
         db_path=DB_PATH
     )
 
-    logger.info(f"Task #{task_dict['id']} saved to database: '{task_text}' (assignee: {assignee}, author: {author}, SLA: {sla_str})")
+    canonical_id = task_dict.get("id")
 
-    # Sync to Google Sheets
+    # Sync to Google Sheets and get the true sequential ID
     if sheets_sync_instance:
         try:
-            sheets_sync_instance.append_task(task_dict)
-            logger.info(f"Task #{task_dict['id']} synced to Google Sheets.")
+            sheet_id = sheets_sync_instance.append_task(task_dict)
+            if sheet_id:
+                canonical_id = sheet_id
+                task_dict["id"] = canonical_id
+                # Keep SQLite ID aligned with Google Sheets
+                try:
+                    with get_connection(DB_PATH) as conn:
+                        conn.cursor().execute("UPDATE tasks SET id = ? WHERE rowid = (SELECT max(rowid) FROM tasks)", (canonical_id,))
+                        conn.commit()
+                except Exception:
+                    pass
+            logger.info(f"Task #{canonical_id} synced to Google Sheets.")
         except Exception as e:
-            logger.error(f"Error syncing task #{task_dict['id']} to Google Sheets: {e}")
+            logger.error(f"Error syncing task #{canonical_id} to Google Sheets: {e}")
 
     # Inline button for instant deletion by @orzmkh
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{task_dict['id']}")]
+        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{canonical_id}")]
     ])
 
     confirm_text = (
-        f"✅ <b>ЗАДАЧА #{task_dict['id']} ЗАФИКСИРОВАНА</b>\n\n"
+        f"✅ <b>ЗАДАЧА #{canonical_id} ЗАФИКСИРОВАНА</b>\n\n"
         f"📋 <b>Задача:</b> {task_text}\n"
         f"👤 <b>Исполнитель:</b> {assignee}\n"
         f"✍️ <b>Постановщик:</b> {author}\n"
@@ -236,7 +246,7 @@ async def _process_and_create_task(update: Update, task_text: str):
             reply_markup=reply_markup,
             reply_to_message_id=message.message_id
         )
-        logger.info(f"Sent confirmation reply for task #{task_dict['id']} to chat {message.chat_id}")
+        logger.info(f"Sent confirmation reply for task #{canonical_id} to chat {message.chat_id}")
     except Exception as e:
         logger.error(f"Failed to send task confirmation reply: {e}")
         try:

@@ -126,16 +126,23 @@ class SheetsSyncManager:
 
     def append_task(self, task: dict):
         if not self.enabled or not self.sheet:
-            return
+            return None
         try:
-            existing_rows = self.sheet.get_all_values()
-            next_id = len(existing_rows)
-            t_id = task.get("id")
-            if not t_id or str(t_id) == "1" and len(existing_rows) > 1:
-                t_id = next_id
+            # Determine true sequential ID by finding max numeric ID in Column 1
+            col1 = self.sheet.col_values(1)
+            max_id = 0
+            for val in col1[1:]:
+                try:
+                    num = int(str(val).replace("#", "").strip())
+                    if num > max_id:
+                        max_id = num
+                except Exception:
+                    pass
+            next_id = max_id + 1
+            task["id"] = next_id
 
             row = [
-                str(t_id),
+                str(next_id),
                 task["task_text"],
                 task["assignee"],
                 task["author"],
@@ -144,9 +151,11 @@ class SheetsSyncManager:
                 task["status"]
             ]
             self.sheet.append_row(row)
-            logger.info(f"Task #{t_id} appended to Google Sheets.")
+            logger.info(f"Task #{next_id} appended to Google Sheets.")
+            return next_id
         except Exception as e:
             logger.error(f"Error appending task #{task.get('id')} to Google Sheets: {e}")
+            return None
 
     def update_task_status(self, task_id: int, new_status: str):
         if not self.enabled or not self.sheet:
