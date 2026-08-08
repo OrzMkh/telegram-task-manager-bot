@@ -151,8 +151,26 @@ class SheetsSyncManager:
             str_id = str(task_id).strip()
             for idx, val in enumerate(id_col_vals):
                 if str(val).strip() == str_id:
-                    self.sheet.delete_rows(idx + 1)
-                    logger.info(f"Task #{task_id} deleted from Google Sheets (row {idx + 1}).")
+                    target_row = idx + 1
+                    # 1. Update status to 'Удалена'
+                    try:
+                        self.sheet.update_cell(target_row, 7, "Удалена")
+                    except Exception as e_st:
+                        logger.warning(f"Could not set status to Удалена: {e_st}")
+
+                    # 2. Delete the row from sheet
+                    try:
+                        self.sheet.delete_rows(target_row)
+                    except AttributeError:
+                        self.sheet.delete_row(target_row)
+                    except Exception as e_del:
+                        logger.warning(f"delete_rows failed, falling back to delete_row: {e_del}")
+                        try:
+                            self.sheet.delete_row(target_row)
+                        except Exception:
+                            pass
+
+                    logger.info(f"Task #{task_id} marked as 'Удалена' and deleted from Google Sheets (row {target_row}).")
                     return True
             return False
         except Exception as e:
