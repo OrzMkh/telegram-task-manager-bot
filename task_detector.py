@@ -19,7 +19,7 @@ def is_authorized_author(user) -> bool:
 
 def is_task_message(text: str, user=None, has_explicit_command: bool = False) -> bool:
     """
-    Rule 1: If message starts with 'З' (or 'з', 'Z', 'z') ONLY at the beginning,
+    Rule 1: If message starts with 'З', 'Т', 'Z', or 'T' (case-insensitive) ONLY at the beginning,
     or explicit command /task, /задача, #task, create a task.
     """
     if not text:
@@ -35,10 +35,10 @@ def is_task_message(text: str, user=None, has_explicit_command: bool = False) ->
     if any(text_lower.startswith(prefix) for prefix in ["/task", "/задача", "/add", "#task", "#задача", "#todo"]):
         return True
 
-    # 2. Rule 1: Starts with letter 'З' / 'з' or 'Z' / 'z' AT THE BEGINNING
-    # Matches: "З ", "з ", "З:", "з:", "З.", "з.", "З,", "з,", "З-", "з-", "З@", "з@"
-    z_pattern = r"^[зzЗZ](?:[\s:.,\-—]|(?=@))"
-    if re.match(z_pattern, text_stripped):
+    # 2. Rule 1: Starts with letter 'З' / 'з', 'Т' / 'т', 'Z' / 'z', 'T' / 't' AT THE BEGINNING
+    # Matches: "З ", "з ", "Т ", "т ", "Z ", "z ", "T ", "t ", "Т:", "т:", "Т.", "т.", "Т@", etc.
+    trigger_pattern = r"^[зzЗZтtТT](?:[\s:.,\-—]|(?=@))"
+    if re.match(trigger_pattern, text_stripped):
         return True
 
     return False
@@ -47,7 +47,7 @@ def is_task_message(text: str, user=None, has_explicit_command: bool = False) ->
 def extract_assignee(message) -> str:
     """
     Rule 2:
-    Priority 1: @mention directly in the message text / caption (e.g. 'З @isslamov сделать отчёт')
+    Priority 1: @mention directly in the message text / caption (e.g. 'Т @isslamov сделать отчёт')
     Priority 2: If no @mention, but it's a reply to another message (voice/text), take author of replied message.
     Priority 3: Fallback to 'Команда'.
     """
@@ -132,14 +132,14 @@ def parse_sla_deadline(text: str, base_time: datetime = None) -> datetime:
 
 def clean_task_text(text: str) -> str:
     """
-    Cleans task text by removing leading 'З' trigger, bot command prefixes or hashtags.
+    Cleans task text by removing leading 'З'/'Т'/'Z'/'T' trigger, bot command prefixes or hashtags.
     """
     cleaned = text.strip()
 
-    # 1. Clean leading 'З' / 'з' prefix
-    z_prefix = re.match(r"^[зzЗZ][\s:.,\-—]*", cleaned)
-    if z_prefix:
-        cleaned = cleaned[len(z_prefix.group(0)):].strip()
+    # 1. Clean leading 'З'/'Т'/'Z'/'T' prefix
+    trigger_prefix = re.match(r"^[зzЗZтtТT][\s:.,\-—]*", cleaned)
+    if trigger_prefix:
+        cleaned = cleaned[len(trigger_prefix.group(0)):].strip()
 
     # 2. Remove command prefixes if present
     for cmd in COMMANDS:
