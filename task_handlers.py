@@ -144,8 +144,9 @@ async def rate_task_callback_handler(update: Update, context: ContextTypes.DEFAU
                 parse_mode="HTML"
             )
         else:
+            clean_tag = (assignee or "").replace("@", "").strip()
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚖️ Оспорить оценку", callback_data=f"dispute_task_{task_id}")]
+                [InlineKeyboardButton("⚖️ Оспорить оценку", callback_data=f"dispute_task_{task_id}_{clean_tag}")]
             ])
             await query.edit_message_text(
                 f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
@@ -299,23 +300,50 @@ async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT
     raw_uname = (user.username or "").lower().replace("@", "").strip()
 
     if data.startswith("dispute_task_"):
-        task_id = data.replace("dispute_task_", "")
+        parts = data.split("_")
+        task_id = parts[2] if len(parts) >= 3 else data.replace("dispute_task_", "")
+        cb_assignee = parts[3] if len(parts) >= 4 else ""
+
         clean_num = int(str(task_id).replace("#", "").strip())
         task = get_task(clean_num, db_path=DB_PATH) or {}
-        assignee = task.get("assignee", "")
 
-        # Check assignee permissions
+        # 1. Determine target assignee from multiple sources
+        assignee = cb_assignee or task.get("assignee", "")
+        msg_text = (query.message.text or query.message.caption or "") if query.message else ""
+
+        if not assignee and "Исполнитель:" in msg_text:
+            try:
+                line = [l for l in msg_text.split("\n") if "Исполнитель:" in l][0]
+                assignee = line.split("Исполнитель:")[1].strip()
+            except Exception:
+                pass
+
+        if not assignee and sheets_sync_instance and sheets_sync_instance.sheet:
+            try:
+                cell = sheets_sync_instance.sheet.find(str(clean_num), in_column=1)
+                if cell:
+                    row_vals = sheets_sync_instance.sheet.row_values(cell.row)
+                    if len(row_vals) > 2:
+                        assignee = row_vals[2].strip()
+            except Exception:
+                pass
+
+        # 2. Strict permission check: ONLY designated assignee(s) can dispute
         if assignee and assignee not in ["Команда", "Сотрудник"]:
             assignee_clean = assignee.lower().replace("@", "")
-            # Check if clicking user's username or name is part of the assignee string
+            allowed_tokens = [tok.strip("@,").lower() for tok in assignee.split() if tok.strip("@,")]
+
             is_allowed = (
-                (raw_uname and raw_uname in assignee_clean) or
+                (raw_uname and (raw_uname in assignee_clean or raw_uname in allowed_tokens)) or
                 (user.first_name and user.first_name.lower() in assignee_clean) or
                 (user.last_name and user.last_name.lower() in assignee_clean) or
                 (str(user.id) in assignee)
             )
+
             if not is_allowed:
-                await query.answer(f"⛔ Только исполнитель {assignee} может оспорить эту оценку!", show_alert=True)
+                display_asgn = assignee if assignee.startswith("@") else f"@{assignee}"
+                await query.answer(f"⛔ Оспорить оценку может только исполнитель {display_asgn}!", show_alert=True)
+                logger.warning(f"Denied dispute attempt by @{user.username} on task #{clean_num} (assigned to {assignee})")
                 return
 
         # Authorized assignee -> Proceed with dispute
@@ -324,18 +352,18 @@ async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT
         except Exception as e:
             logger.error(f"Failed to answer callback query: {e}")
 
-        context.user_data["awaiting_dispute_for_task"] = task_id
+        context.user_data["awaiting_dispute_for_task"] = str(clean_num)
         chat_id = query.message.chat_id if query.message else int(TARGET_CHAT_ID)
 
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"⚖️ <b>ОСПАРИВАНИЕ ОЦЕНКИ ЗАДАЧИ #{task_id}</b>\n\n"
+                text=f"⚖️ <b>ОСПАРИВАНИЕ ОЦЕНКИ ЗАДАЧИ #{clean_num}</b>\n\n"
                      f"👤 <b>{username}</b>, напишите прямо следующим сообщением в этот чат причину вашей оценки / несогласия:\n"
                      f"<i>(Например: Задержка произошла из-за ожидания ответа от курьера...)</i>",
                 parse_mode="HTML"
             )
-            logger.info(f"Sent dispute prompt for task #{task_id} to chat {chat_id}")
+            logger.info(f"Sent dispute prompt for task #{clean_num} to chat {chat_id}")
         except Exception as e:
             logger.error(f"Failed to send dispute prompt message: {e}")
 
