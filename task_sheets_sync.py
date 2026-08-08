@@ -180,14 +180,17 @@ class SheetsSyncManager:
         try:
             id_col_vals = self.sheet.col_values(1)
             target_row = None
-            str_id = str(task_id).strip()
+            str_id = str(task_id).replace("#", "").strip()
             for idx, val in enumerate(id_col_vals):
-                if str(val).strip() == str_id:
+                if str(val).replace("#", "").strip() == str_id:
                     target_row = idx + 1
                     break
             if target_row:
+                # Column 7 is 'Статус'
+                self.sheet.update_cell(target_row, 7, "Disputed")
+                # Column 9 is 'Причина оспаривания'
                 self.sheet.update_cell(target_row, 9, dispute_reason)
-                logger.info(f"Task #{task_id} dispute comment updated in Google Sheets.")
+                logger.info(f"Task #{task_id} marked as 'Disputed' with comment in Google Sheets (row {target_row}).")
         except Exception as e:
             logger.error(f"Error updating task #{task_id} dispute in Google Sheets: {e}")
 

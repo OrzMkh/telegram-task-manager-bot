@@ -338,12 +338,12 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
 
     context.user_data.pop("awaiting_dispute_for_task", None)
 
-    import sqlite3
+    clean_task_num = int(str(awaiting_task_id).replace("#", "").strip())
     dispute_msg = f"Оспаривание от {username}: {reason_text}"
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("UPDATE tasks SET is_disputed = 1, rating = 0, rating_comment = ? WHERE id = ?", (dispute_msg, awaiting_task_id))
+        c.execute("UPDATE tasks SET is_disputed = 1, status = 'Disputed', rating = 0, rating_comment = ? WHERE id = ?", (dispute_msg, clean_task_num))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -351,7 +351,7 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
 
     if sheets_sync_instance:
         try:
-            sheets_sync_instance.update_task_dispute(awaiting_task_id, f"{username}: {reason_text}")
+            sheets_sync_instance.update_task_dispute(clean_task_num, f"{username}: {reason_text}")
         except Exception as e:
             logger.error(f"Failed to sync dispute to Google Sheets: {e}")
 
