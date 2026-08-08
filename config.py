@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Telegram Settings
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g").strip()
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", "-1002638798110")
 
 # Google Sheets Settings
