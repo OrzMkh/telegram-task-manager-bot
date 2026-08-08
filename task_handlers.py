@@ -43,6 +43,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text, parse_mode="HTML", reply_markup=keyboard)
 
 
+GLOBAL_PENDING_TASKS = {}
+
+
 async def task_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
@@ -59,7 +62,7 @@ async def task_command_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("⚠️ Пожалуйста, укажите текст задачи после команды. Пример: <code>/task Подготовить отчёт</code>", parse_mode="HTML")
         return
 
-    await _process_and_create_task(update, task_raw_text)
+    await _process_and_create_task(update, task_raw_text, context=context)
 
 
 async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -189,7 +192,7 @@ async def message_auto_detector_handler(update: Update, context: ContextTypes.DE
 
     if is_task_message(text_stripped, user=user):
         task_text = clean_task_text(text_stripped)
-        await _process_and_create_task(update, task_text)
+        await _process_and_create_task(update, task_text, context=context)
 
 
 async def _process_and_create_task(update: Update, task_text: str, context: ContextTypes.DEFAULT_TYPE = None, override_assignee: str = ""):
@@ -202,31 +205,34 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
 
     # If no @mention in text, do NOT assign replied user. Ask @orzmkh for assignee!
     if not assignee:
+        task_draft = {
+            "task_text": task_text,
+            "author": author,
+            "raw_text": message.text or message.caption or task_text,
+            "chat_id": message.chat_id,
+            "message_id": message.message_id
+        }
+        GLOBAL_PENDING_TASKS[str(message.message_id)] = task_draft
+        GLOBAL_PENDING_TASKS[str(message.from_user.id)] = task_draft
         if context:
-            context.user_data["pending_task"] = {
-                "task_text": task_text,
-                "author": author,
-                "raw_text": message.text or message.caption or task_text,
-                "chat_id": message.chat_id,
-                "message_id": message.message_id
-            }
+            context.user_data["pending_task"] = task_draft
 
         assign_keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("👤 Ильясбек (@isslamov)", callback_data="assign_isslamov"),
+                InlineKeyboardButton("👤 Ильясбек (@isslamov)", callback_data=f"assign_isslamov_{message.message_id}"),
             ],
             [
-                InlineKeyboardButton("👤 Мужахидбек (@orzmkh)", callback_data="assign_orzmkh"),
+                InlineKeyboardButton("👤 Мужахидбек (@orzmkh)", callback_data=f"assign_orzmkh_{message.message_id}"),
             ],
             [
-                InlineKeyboardButton("👤 Жахангир (@Silent_trickster)", callback_data="assign_jahangir"),
+                InlineKeyboardButton("👤 Жахангир (@Silent_trickster)", callback_data=f"assign_jahangir_{message.message_id}"),
             ],
             [
-                InlineKeyboardButton("👥 Вся команда", callback_data="assign_team"),
+                InlineKeyboardButton("👥 Вся команда", callback_data=f"assign_team_{message.message_id}"),
             ]
         ])
 
-        await message.reply_text(
+        sent_msg = await message.reply_text(
             f"⚠️ <b>Укажите исполнителя задачи!</b>\n\n"
             f"📋 <b>Задача:</b> {task_text}\n\n"
             f"Выберите исполнителя из списка ниже или отправьте тег следующим сообщением:",
@@ -234,6 +240,7 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
             reply_markup=assign_keyboard,
             reply_to_message_id=message.message_id
         )
+        GLOBAL_PENDING_TASKS[str(sent_msg.message_id)] = task_draft
         return
 
     now = datetime.now()
@@ -437,16 +444,47 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         await query.answer("⛔ Только руководитель @orzmkh может назначать исполнителя!", show_alert=True)
         return
 
+    parts = data.split("_")
+    action_key = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else data
+    msg_id = parts[2] if len(parts) >= 3 else ""
+
     assignee_map = {
         "assign_isslamov": "@isslamov",
         "assign_orzmkh": "@orzmkh",
         "assign_jahangir": "@Silent_trickster",
         "assign_team": "Команда",
     }
-    assignee = assignee_map.get(data, "Команда")
-    pending = context.user_data.pop("pending_task", None)
+    assignee = assignee_map.get(action_key, "Команда")
+
+    # Look up pending task draft from multiple persistent locations
+    pending = None
+    if msg_id and str(msg_id) in GLOBAL_PENDING_TASKS:
+        pending = GLOBAL_PENDING_TASKS.pop(str(msg_id))
+    elif query.message and str(query.message.message_id) in GLOBAL_PENDING_TASKS:
+        pending = GLOBAL_PENDING_TASKS.pop(str(query.message.message_id))
+    elif str(user.id) in GLOBAL_PENDING_TASKS:
+        pending = GLOBAL_PENDING_TASKS.pop(str(user.id))
+    elif context and "pending_task" in context.user_data:
+        pending = context.user_data.pop("pending_task")
+
+    # Fallback to extracting task text from prompt message if memory was purged
+    if not pending and query.message:
+        msg_body = query.message.text or query.message.caption or ""
+        if "Задача:" in msg_body:
+            try:
+                line = [l for l in msg_body.split("\n") if "Задача:" in l][0]
+                extracted_txt = line.split("Задача:")[1].strip()
+                if extracted_txt:
+                    pending = {
+                        "task_text": extracted_txt,
+                        "author": f"@{user.username}" if user.username else "@orzmkh",
+                        "raw_text": extracted_txt
+                    }
+            except Exception:
+                pass
+
     if not pending:
-        await query.answer("⚠️ Задача уже зафиксирована или срок ожидания истёк.", show_alert=True)
+        await query.answer("⚠️ Задача уже зафиксирована.", show_alert=True)
         return
 
     await query.answer(f"Исполнитель: {assignee}")
