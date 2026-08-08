@@ -128,8 +128,14 @@ class SheetsSyncManager:
         if not self.enabled or not self.sheet:
             return
         try:
+            existing_rows = self.sheet.get_all_values()
+            next_id = len(existing_rows)
+            t_id = task.get("id")
+            if not t_id or str(t_id) == "1" and len(existing_rows) > 1:
+                t_id = next_id
+
             row = [
-                task["id"],
+                str(t_id),
                 task["task_text"],
                 task["assignee"],
                 task["author"],
@@ -138,9 +144,9 @@ class SheetsSyncManager:
                 task["status"]
             ]
             self.sheet.append_row(row)
-            logger.info(f"Task #{task['id']} appended to Google Sheets.")
+            logger.info(f"Task #{t_id} appended to Google Sheets.")
         except Exception as e:
-            logger.error(f"Error appending task #{task['id']} to Google Sheets: {e}")
+            logger.error(f"Error appending task #{task.get('id')} to Google Sheets: {e}")
 
     def update_task_status(self, task_id: int, new_status: str):
         if not self.enabled or not self.sheet:
