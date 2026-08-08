@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
-from task_database import add_task, get_all_tasks, get_task, update_task_status
+from task_database import add_task, get_all_tasks, get_task, update_task_status, delete_task
 from task_sheets_sync import SheetsSyncManager
 from task_detector import (
     is_task_message,
@@ -145,6 +145,65 @@ async def _process_and_create_task(update: Update, task_text: str):
     # Sync to Google Sheets
     if sheets_sync_instance:
         sheets_sync_instance.append_task(task_dict)
+
+    # Inline button for instant deletion by @orzmkh
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{task_dict['id']}")]
+    ])
+
+    confirm_text = (
+        f"✅ <b>ЗАДАЧА #{task_dict['id']} ЗАФИКСИРОВАНА</b>\n\n"
+        f"📋 <b>Задача:</b> {task_text}\n"
+        f"👤 <b>Исполнитель:</b> {assignee}\n"
+        f"✍️ <b>Постановщик:</b> {author}\n"
+        f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
+        f"📊 <b>Статус:</b> Занесена в БД и Google Таблицу"
+    )
+
+    try:
+        await message.reply_text(confirm_text, parse_mode="HTML", reply_markup=reply_markup)
+    except Exception as e:
+        logger.error(f"Failed to send task confirmation message: {e}")
+
+
+async def delete_task_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    user = query.from_user
+    username = (user.username or "").lower().replace("@", "")
+
+    # Security check: ONLY @orzmkh is allowed to delete tasks
+    if username != "orzmkh":
+        await query.answer("⛔ Только руководитель @orzmkh может удалять задачи!", show_alert=True)
+        return
+
+    if data.startswith("delete_task_"):
+        task_id_str = data.replace("delete_task_", "")
+        if not task_id_str.isdigit():
+            await query.answer("⚠️ Неверный ID задачи.", show_alert=True)
+            return
+
+        task_id = int(task_id_str)
+
+        # 1. Delete from SQLite DB
+        delete_task(task_id, db_path=DB_PATH)
+
+        # 2. Delete from Google Sheets
+        if sheets_sync_instance:
+            sheets_sync_instance.delete_task(task_id)
+
+        await query.answer(f"🗑 Задача #{task_id} удалена из БД и таблицы!", show_alert=True)
+
+        try:
+            await query.edit_message_text(
+                f"🗑 <b>Задача #{task_id} удалена из базы и таблицы руководителем @{user.username}.</b>",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Error editing message after task delete: {e}")
 
 async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

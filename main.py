@@ -106,7 +106,8 @@ def main():
     application.add_handler(PrefixHandler("/", ["done", "готово"], done_task_handler))
     application.add_handler(PrefixHandler("/", ["reports", "отчеты", "отчёты"], list_reports_handler))
 
-    # 6. Register Dispute Handlers
+    # 6. Register Dispute & Delete Handlers
+    application.add_handler(CallbackQueryHandler(delete_task_callback_handler, pattern="^delete_task_"))
     application.add_handler(CallbackQueryHandler(dispute_callback_handler, pattern="^dispute_task_"))
 
     # 7. Register Auto-detection Message Handler for non-command messages

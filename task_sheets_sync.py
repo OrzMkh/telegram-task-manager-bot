@@ -143,6 +143,22 @@ class SheetsSyncManager:
         except Exception as e:
             logger.error(f"Error updating task #{task_id} dispute in Google Sheets: {e}")
 
+    def delete_task(self, task_id: int) -> bool:
+        if not self.enabled or not self.sheet:
+            return False
+        try:
+            id_col_vals = self.sheet.col_values(1)
+            str_id = str(task_id).strip()
+            for idx, val in enumerate(id_col_vals):
+                if str(val).strip() == str_id:
+                    self.sheet.delete_rows(idx + 1)
+                    logger.info(f"Task #{task_id} deleted from Google Sheets (row {idx + 1}).")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting task #{task_id} from Google Sheets: {e}")
+            return False
+
     def append_bike_report(self, report: dict):
         if not self.enabled or not self.client:
             return

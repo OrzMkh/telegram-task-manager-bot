@@ -191,6 +191,13 @@ def update_task_status(task_id: int, status: str, db_path="tasks.db") -> bool:
         conn.commit()
         return cursor.rowcount > 0
 
+def delete_task(task_id: int, db_path="tasks.db") -> bool:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
 def mark_reminder_sent(task_id: int, db_path="tasks.db") -> bool:
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
