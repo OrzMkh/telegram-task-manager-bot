@@ -1,83 +1,70 @@
 import re
 from datetime import datetime, timedelta
 
-NLP_KEYWORDS = [
-    r"\bнужно\b", r"\bсделать\b", r"\bпроверь\b", r"\bпоправь\b",
-    r"\bподготовь\b", r"\bнапиши\b", r"\bсоздай\b", r"\bотправь\b",
-    r"\bдоделай\b", r"\bисправь\b", r"\bнастрой\b", r"\bсделай\b",
-    r"\bfix\b", r"\btodo\b"
-]
-
 HASHTAGS = ["#задача", "#task", "#todo", "#задание"]
 COMMANDS = [
     "/task", "/задача", "/add", "/newtask", "/todo",
     "задача:", "задача", "задачу:", "задачу", "task:", "task", "todo:"
 ]
 
-def has_explicit_sla(text: str) -> bool:
-    if not text:
+def is_authorized_author(user) -> bool:
+    """
+    Rule 3: Only @orzmkh is allowed to create tasks.
+    """
+    if not user:
         return False
-    text_lower = text.lower()
-    patterns = [
-        r"\b(?:в течение|через)\s+\d+\s*(?:ч|час|часа|часов|д|день|дня|дней|мин|минут|минуты)\b",
-        r"\bдо завтра\b",
-        r"\bдо\s+\d{1,2}[:\-.]\d{2}\b",
-        r"\bsla\s*[:\-=]?\s*\d+",
-        r"\bсрок\s*[:\-=]?\s*\d+",
-        r"\b\d+\s*(?:ч|час|часа|часов|дней|дня|дний|д)\b",
-        r"\bдо\s+\d{1,2}\.\d{2}\b"
-    ]
-    for p in patterns:
-        if re.search(p, text_lower):
-            return True
-    return False
+    username = (user.username or "").lower().replace("@", "").strip()
+    return username == "orzmkh"
+
 
 def is_task_message(text: str, user=None, has_explicit_command: bool = False) -> bool:
+    """
+    Rule 1: If message starts with 'З' (or 'з', 'Z', 'z') ONLY at the beginning,
+    or explicit command /task, /задача, #task, create a task.
+    """
     if not text:
         return False
 
     if has_explicit_command:
         return True
 
-    text_lower = text.lower().strip()
+    text_stripped = text.strip()
+    text_lower = text_stripped.lower()
 
     # 1. Starts with commands or hashtags
     if any(text_lower.startswith(prefix) for prefix in ["/task", "/задача", "/add", "#task", "#задача", "#todo"]):
         return True
 
-    # 2. Contains explicit task markers
-    if any(tag in text_lower for tag in ["#task", "#задача", "#todo", "/task", "/задача"]):
+    # 2. Rule 1: Starts with letter 'З' / 'з' or 'Z' / 'z' AT THE BEGINNING
+    # Matches: "З ", "з ", "З:", "з:", "З.", "з.", "З,", "з,", "З-", "з-", "З@", "з@"
+    z_pattern = r"^[зzЗZ](?:[\s:.,\-—]|(?=@))"
+    if re.match(z_pattern, text_stripped):
         return True
 
-    # 3. Action keywords
-    task_keywords = [
-        "задача", "задачу", "задание", "поручение",
-        "нужно сделать", "надо сделать", "сделай", "сделайте",
-        "проверь", "проверьте", "исправь", "исправьте",
-        "подготовь", "подготовьте", "создай", "создайте",
-        "напиши", "напишите", "отправь", "отправьте",
-        "доделай", "настрой"
-    ]
-    return any(kw in text_lower for kw in task_keywords)
+    return False
 
 
 def extract_assignee(message) -> str:
     """
-    Extract assignee based on reply -> @mention -> default 'Команда'.
+    Rule 2:
+    Priority 1: @mention directly in the message text / caption (e.g. 'З @isslamov сделать отчёт')
+    Priority 2: If no @mention, but it's a reply to another message (voice/text), take author of replied message.
+    Priority 3: Fallback to 'Команда'.
     """
-    # 1. Reply to another user
+    text = message.text or message.caption or ""
+    
+    # 1. Mention in current text (@username) takes highest priority
+    mentions = re.findall(r"@[\w_]+", text)
+    if mentions:
+        return mentions[0]
+
+    # 2. Reply to another user
     if message.reply_to_message and message.reply_to_message.from_user:
         target_user = message.reply_to_message.from_user
         if target_user.username:
             return f"@{target_user.username}"
         full_name = f"{target_user.first_name or ''} {target_user.last_name or ''}".strip()
         return full_name if full_name else f"ID_{target_user.id}"
-
-    # 2. Mention in text (@username)
-    text = message.text or message.caption or ""
-    mentions = re.findall(r"@[\w_]+", text)
-    if mentions:
-        return mentions[0]
 
     # 3. Default fallback
     return "Команда"
@@ -145,16 +132,22 @@ def parse_sla_deadline(text: str, base_time: datetime = None) -> datetime:
 
 def clean_task_text(text: str) -> str:
     """
-    Cleans task text by removing bot command prefixes or task hashtags.
+    Cleans task text by removing leading 'З' trigger, bot command prefixes or hashtags.
     """
-    cleaned = text
-    # Remove command prefix
+    cleaned = text.strip()
+
+    # 1. Clean leading 'З' / 'з' prefix
+    z_prefix = re.match(r"^[зzЗZ][\s:.,\-—]*", cleaned)
+    if z_prefix:
+        cleaned = cleaned[len(z_prefix.group(0)):].strip()
+
+    # 2. Remove command prefixes if present
     for cmd in COMMANDS:
         if cleaned.lower().startswith(cmd):
             cleaned = cleaned[len(cmd):].strip()
             break
 
-    # Remove hashtags if at start or end
+    # 3. Remove hashtags if at start or end
     for tag in HASHTAGS:
         cleaned = re.sub(re.escape(tag), "", cleaned, flags=re.IGNORECASE)
 

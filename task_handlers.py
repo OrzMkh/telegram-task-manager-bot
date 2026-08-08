@@ -7,6 +7,7 @@ from task_database import add_task, get_all_tasks, get_task, update_task_status,
 from task_sheets_sync import SheetsSyncManager
 from task_detector import (
     is_task_message,
+    is_authorized_author,
     extract_assignee,
     extract_author,
     parse_sla_deadline,
@@ -26,15 +27,14 @@ def set_sheets_sync(manager: SheetsSyncManager):
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardMarkup
     help_text = (
-        "🤖 <b>Telegram Бот-Менеджер Задач и Отчётов для Партнёров («Байки»)</b>\n\n"
-        "<b>📝 Форма отчёта партнеров:</b>\n"
-        "• <code>/report</code> или <code>/байки</code> — Заполнить ежедневный отчёт по байкам.\n"
-        "• <code>/reports</code> — Просмотреть последние отправленные отчёты.\n\n"
-        "<b>📌 Управление задачами:</b>\n"
-        "• <code>/task &lt;текст&gt;</code> или <code>/задача &lt;текст&gt;</code> — Поставить задачу.\n"
+        "🤖 <b>Telegram Бот-Менеджер Задач и Отчётов («Байки»)</b>\n\n"
+        "<b>📌 Создание задач (руководитель @orzmkh):</b>\n"
+        "• Начните сообщение с буквы <b>«З»</b> (например: <code>З @isslamov проверить байки</code>).\n"
+        "• Или сделайте Reply на сообщение/голосовое сотрудника с буквой <b>«З»</b>.\n"
+        "• Команды: <code>/task &lt;текст&gt;</code> или <code>/задача &lt;текст&gt;</code>.\n\n"
+        "<b>📋 Управление:</b>\n"
         "• <code>/list</code> или <code>/задачи</code> — Список активных задач.\n"
-        "• <code>/done &lt;ID&gt;</code> — Завершить задачу.\n"
-        "• <code>/help</code> — Справка."
+        "• <code>/done &lt;ID&gt;</code> — Оценить и завершить задачу."
     )
     keyboard = ReplyKeyboardMarkup(
         [["📝 Заполнить отчёт (Байки)"], ["/list", "/reports"]],
@@ -43,12 +43,16 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text, parse_mode="HTML", reply_markup=keyboard)
 
 
-
 async def task_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
-    text = update.message.text or ""
+    user = update.message.from_user
+    if not is_authorized_author(user):
+        await update.message.reply_text("⛔ Только руководитель @orzmkh может ставить задачи!", parse_mode="HTML")
+        return
+
+    text = update.message.text or update.message.caption or ""
     task_raw_text = clean_task_text(text)
 
     if not task_raw_text or task_raw_text.lower() in ["/task", "/задача", "/add"]:
@@ -160,23 +164,31 @@ async def rate_task_callback_handler(update: Update, context: ContextTypes.DEFAU
 
 
 async def message_auto_detector_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
+    if not update.message:
+        return
+
+    text = update.message.text or update.message.caption or ""
+    if not text:
         return
 
     user = update.message.from_user
     if not user:
         return
 
-    text = update.message.text.strip()
-    chat = update.message.chat
-    logger.info(f"Incoming message in chat {chat.id} ({getattr(chat, 'title', 'DM')}): '{text}' from @{user.username}")
-
-    # Skip if message starts with a command registered elsewhere (e.g. /start, /help, /list, /done)
-    if text.startswith("/") and not any(text.startswith(cmd) for cmd in ["/task", "/задача", "/add", "/newtask"]):
+    # Rule 3: Only @orzmkh can create tasks
+    if not is_authorized_author(user):
         return
 
-    if is_task_message(text, user=user):
-        task_text = clean_task_text(text)
+    text_stripped = text.strip()
+    chat = update.message.chat
+    logger.info(f"Incoming task message in chat {chat.id} from @{user.username}: '{text_stripped}'")
+
+    # Skip if message starts with other commands (e.g. /start, /help, /list, /done, /report)
+    if text_stripped.startswith("/") and not any(text_stripped.startswith(cmd) for cmd in ["/task", "/задача", "/add", "/newtask"]):
+        return
+
+    if is_task_message(text_stripped, user=user):
+        task_text = clean_task_text(text_stripped)
         await _process_and_create_task(update, task_text)
 
 
