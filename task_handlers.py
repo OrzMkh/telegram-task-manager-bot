@@ -192,14 +192,50 @@ async def message_auto_detector_handler(update: Update, context: ContextTypes.DE
         await _process_and_create_task(update, task_text)
 
 
-async def _process_and_create_task(update: Update, task_text: str):
+async def _process_and_create_task(update: Update, task_text: str, context: ContextTypes.DEFAULT_TYPE = None, override_assignee: str = ""):
     message = update.message
     if not message:
         return
 
-    assignee = extract_assignee(message)
+    assignee = override_assignee or extract_assignee(message)
     author = extract_author(message)
-    
+
+    # If no @mention in text, do NOT assign replied user. Ask @orzmkh for assignee!
+    if not assignee:
+        if context:
+            context.user_data["pending_task"] = {
+                "task_text": task_text,
+                "author": author,
+                "raw_text": message.text or message.caption or task_text,
+                "chat_id": message.chat_id,
+                "message_id": message.message_id
+            }
+
+        assign_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("👤 @isslamov", callback_data="assign_isslamov"),
+                InlineKeyboardButton("👤 @ilyas", callback_data="assign_ilyas"),
+            ],
+            [
+                InlineKeyboardButton("👤 @dilshod", callback_data="assign_dilshod"),
+                InlineKeyboardButton("👤 @rustam", callback_data="assign_rustam"),
+            ],
+            [
+                InlineKeyboardButton("👥 Команда", callback_data="assign_team"),
+            ]
+        ])
+
+        await message.reply_text(
+            f"⚠️ <b>Укажите исполнителя задачи!</b>\n\n"
+            f"📋 <b>Задача:</b> {task_text}\n\n"
+            f"В сообщении нет тега сотрудника.\n"
+            f"Напишите тег следующим сообщением (например: <code>@isslamov</code>) или выберите из кнопок:",
+            parse_mode="HTML",
+            reply_markup=assign_keyboard,
+            reply_to_message_id=message.message_id
+        )
+        return
+
     now = datetime.now()
     created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
     
@@ -390,10 +426,154 @@ async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT
             logger.error(f"Failed to send dispute prompt message: {e}")
 
 
+async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    user = query.from_user
+    if not is_authorized_author(user):
+        await query.answer("⛔ Только руководитель @orzmkh может назначать исполнителя!", show_alert=True)
+        return
+
+    assignee_map = {
+        "assign_isslamov": "@isslamov",
+        "assign_ilyas": "@ilyas",
+        "assign_dilshod": "@dilshod",
+        "assign_rustam": "@rustam",
+        "assign_team": "Команда",
+    }
+    assignee = assignee_map.get(data, "Команда")
+    pending = context.user_data.pop("pending_task", None)
+    if not pending:
+        await query.answer("⚠️ Задача уже зафиксирована или срок ожидания истёк.", show_alert=True)
+        return
+
+    await query.answer(f"Исполнитель: {assignee}")
+    task_text = pending.get("task_text", "")
+    author = pending.get("author", f"@{user.username}")
+    raw_text = pending.get("raw_text", task_text)
+
+    now = datetime.now()
+    created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    sla_dt = parse_sla_deadline(raw_text, base_time=now)
+    sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Add task to SQLite DB
+    task_dict = add_task(
+        task_text=task_text,
+        assignee=assignee,
+        author=author,
+        sla_deadline=sla_str,
+        created_at=created_at_str,
+        db_path=DB_PATH
+    )
+
+    canonical_id = task_dict.get("id")
+
+    # Sync to Google Sheets
+    if sheets_sync_instance:
+        try:
+            sheet_id = sheets_sync_instance.append_task(task_dict)
+            if sheet_id:
+                canonical_id = sheet_id
+                task_dict["id"] = canonical_id
+                try:
+                    with get_connection(DB_PATH) as conn:
+                        conn.cursor().execute("UPDATE tasks SET id = ? WHERE rowid = (SELECT max(rowid) FROM tasks)", (canonical_id,))
+                        conn.commit()
+                except Exception:
+                    pass
+            logger.info(f"Task #{canonical_id} synced to Google Sheets.")
+        except Exception as e:
+            logger.error(f"Error syncing task #{canonical_id} to Google Sheets: {e}")
+
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{canonical_id}")]
+    ])
+
+    confirm_text = (
+        f"✅ <b>ЗАДАЧА #{canonical_id} ЗАФИКСИРОВАНА</b>\n\n"
+        f"📋 <b>Задача:</b> {task_text}\n"
+        f"👤 <b>Исполнитель:</b> {assignee}\n"
+        f"✍️ <b>Постановщик:</b> {author}\n"
+        f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
+        f"📊 <b>Статус:</b> Занесена в БД и Google Таблицу"
+    )
+
+    try:
+        await query.edit_message_text(
+            confirm_text,
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Error editing message after assigning: {e}")
+
+
 async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     
+    # 1. Check if there is a pending task waiting for @orzmkh to specify assignee
+    pending = context.user_data.get("pending_task")
+    if pending and is_authorized_author(update.message.from_user):
+        text_in = update.message.text.strip()
+        mentions = re.findall(r"@[\w_]+", text_in)
+        assignee = " ".join(mentions) if mentions else (text_in if text_in.startswith("@") else f"@{text_in}")
+        context.user_data.pop("pending_task", None)
+
+        task_text = pending.get("task_text", "")
+        author = pending.get("author", f"@{update.message.from_user.username}")
+        raw_text = pending.get("raw_text", task_text)
+
+        now = datetime.now()
+        created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        sla_dt = parse_sla_deadline(raw_text, base_time=now)
+        sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        task_dict = add_task(
+            task_text=task_text,
+            assignee=assignee,
+            author=author,
+            sla_deadline=sla_str,
+            created_at=created_at_str,
+            db_path=DB_PATH
+        )
+        canonical_id = task_dict.get("id")
+
+        if sheets_sync_instance:
+            try:
+                sheet_id = sheets_sync_instance.append_task(task_dict)
+                if sheet_id:
+                    canonical_id = sheet_id
+                    task_dict["id"] = canonical_id
+                    try:
+                        with get_connection(DB_PATH) as conn:
+                            conn.cursor().execute("UPDATE tasks SET id = ? WHERE rowid = (SELECT max(rowid) FROM tasks)", (canonical_id,))
+                            conn.commit()
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.error(f"Error syncing task #{canonical_id} to Google Sheets: {e}")
+
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{canonical_id}")]
+        ])
+
+        confirm_text = (
+            f"✅ <b>ЗАДАЧА #{canonical_id} ЗАФИКСИРОВАНА</b>\n\n"
+            f"📋 <b>Задача:</b> {task_text}\n"
+            f"👤 <b>Исполнитель:</b> {assignee}\n"
+            f"✍️ <b>Постановщик:</b> {author}\n"
+            f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
+            f"📊 <b>Статус:</b> Занесена в БД и Google Таблицу"
+        )
+        await update.message.reply_text(confirm_text, parse_mode="HTML", reply_markup=reply_markup, reply_to_message_id=update.message.message_id)
+        return
+
+    # 2. Check if awaiting dispute reason
     awaiting_task_id = context.user_data.get("awaiting_dispute_for_task")
     if not awaiting_task_id:
         return

@@ -46,28 +46,15 @@ def is_task_message(text: str, user=None, has_explicit_command: bool = False) ->
 
 def extract_assignee(message) -> str:
     """
-    Rule 2:
-    Priority 1: @mention directly in the message text / caption (e.g. 'Т @isslamov сделать отчёт')
-    Priority 2: If no @mention, but it's a reply to another message (voice/text), take author of replied message.
-    Priority 3: Fallback to 'Команда'.
+    Extract assignee based ONLY on explicit @mention(s) in message text or caption.
+    Never takes replied message author automatically.
+    If no @mention is present, returns empty string so bot can ask user to specify.
     """
     text = message.text or message.caption or ""
-    
-    # 1. Mention in current text (@username) takes highest priority
     mentions = re.findall(r"@[\w_]+", text)
     if mentions:
-        return mentions[0]
-
-    # 2. Reply to another user
-    if message.reply_to_message and message.reply_to_message.from_user:
-        target_user = message.reply_to_message.from_user
-        if target_user.username:
-            return f"@{target_user.username}"
-        full_name = f"{target_user.first_name or ''} {target_user.last_name or ''}".strip()
-        return full_name if full_name else f"ID_{target_user.id}"
-
-    # 3. Default fallback
-    return "Команда"
+        return " ".join(mentions)
+    return ""
 
 
 def extract_author(message) -> str:
