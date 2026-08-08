@@ -91,15 +91,71 @@ async def done_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Задача #{task_id} не найдена.")
         return
 
-    if task["status"] == "Completed":
-        await update.message.reply_text(f"ℹ️ Задача #{task_id} уже выполнена!")
+    # Prompt manager to rate the task 1-5 stars before notifying
+    rating_keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⭐ 1", callback_data=f"rate_task_{task_id}_1"),
+            InlineKeyboardButton("⭐ 2", callback_data=f"rate_task_{task_id}_2"),
+            InlineKeyboardButton("⭐ 3", callback_data=f"rate_task_{task_id}_3"),
+            InlineKeyboardButton("⭐ 4", callback_data=f"rate_task_{task_id}_4"),
+            InlineKeyboardButton("⭐ 5", callback_data=f"rate_task_{task_id}_5"),
+        ]
+    ])
+
+    await update.message.reply_text(
+        f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+        f"📋 <b>Задача:</b> {task.get('task_text', '')}\n"
+        f"👤 <b>Исполнитель:</b> {task.get('assignee', 'Команда')}\n\n"
+        f"Пожалуйста, выберите оценку качества выполнения от 1 до 5:",
+        parse_mode="HTML",
+        reply_markup=rating_keyboard
+    )
+
+
+async def rate_task_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
         return
 
-    update_task_status(task_id, "Completed", db_path=DB_PATH)
-    if sheets_sync_instance:
-        sheets_sync_instance.update_task_status(task_id, "Completed")
+    data = query.data or ""
+    if data.startswith("rate_task_"):
+        parts = data.split("_")
+        task_id = int(parts[2])
+        stars = int(parts[3])
+        stars_str = "⭐️" * stars
 
-    await update.message.reply_text(f"🎉 <b>Задача #{task_id} отмечена как выполненная!</b>", parse_mode="HTML")
+        # Update in DB
+        update_task_status(task_id, "Completed", db_path=DB_PATH)
+        if sheets_sync_instance:
+            sheets_sync_instance.update_task_status(task_id, "Completed")
+            sheets_sync_instance.update_task_rating(task_id, stars, is_final=True)
+
+        task = get_task(task_id, db_path=DB_PATH) or {}
+        task_text = task.get("task_text", f"Задача #{task_id}")
+        assignee = task.get("assignee", "Команда")
+
+        if stars >= 5:
+            await query.edit_message_text(
+                f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                f"📌 <b>Задача:</b> {task_text}\n"
+                f"👤 <b>Исполнитель:</b> {assignee}\n"
+                f"👑 <b>Оценка руководителя:</b> {stars_str} (5/5)\n\n"
+                f"🎉 <b>Отличная работа!</b> Задача оценена на максимум (5/5) — оспаривание не требуется.",
+                parse_mode="HTML"
+            )
+        else:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚖️ Оспорить оценку", callback_data=f"dispute_task_{task_id}")]
+            ])
+            await query.edit_message_text(
+                f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                f"📌 <b>Задача:</b> {task_text}\n"
+                f"👤 <b>Исполнитель:</b> {assignee}\n"
+                f"👑 <b>Оценка руководителя:</b> {stars_str} ({stars}/5)\n\n"
+                f"⚖️ <i>Исполнитель {assignee} может оспорить эту оценку, если не согласен:</i>",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
 
 
 async def message_auto_detector_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -110,10 +166,12 @@ async def message_auto_detector_handler(update: Update, context: ContextTypes.DE
     if not user:
         return
 
-    text = update.message.text
+    text = update.message.text.strip()
+    chat = update.message.chat
+    logger.info(f"Incoming message in chat {chat.id} ({getattr(chat, 'title', 'DM')}): '{text}' from @{user.username}")
 
     # Skip if message starts with a command registered elsewhere (e.g. /start, /help, /list, /done)
-    if text.startswith("/") and not any(text.startswith(cmd) for cmd in ["/task", "/задача", "/add"]):
+    if text.startswith("/") and not any(text.startswith(cmd) for cmd in ["/task", "/задача", "/add", "/newtask"]):
         return
 
     if is_task_message(text, user=user):
@@ -123,13 +181,17 @@ async def message_auto_detector_handler(update: Update, context: ContextTypes.DE
 
 async def _process_and_create_task(update: Update, task_text: str):
     message = update.message
+    if not message:
+        return
+
     assignee = extract_assignee(message)
     author = extract_author(message)
     
     now = datetime.now()
     created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
     
-    sla_dt = parse_sla_deadline(message.text, base_time=now)
+    raw_text = message.text or task_text
+    sla_dt = parse_sla_deadline(raw_text, base_time=now)
     sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     # Add task to SQLite DB
@@ -142,9 +204,15 @@ async def _process_and_create_task(update: Update, task_text: str):
         db_path=DB_PATH
     )
 
+    logger.info(f"Task #{task_dict['id']} saved to database: '{task_text}' (assignee: {assignee}, author: {author}, SLA: {sla_str})")
+
     # Sync to Google Sheets
     if sheets_sync_instance:
-        sheets_sync_instance.append_task(task_dict)
+        try:
+            sheets_sync_instance.append_task(task_dict)
+            logger.info(f"Task #{task_dict['id']} synced to Google Sheets.")
+        except Exception as e:
+            logger.error(f"Error syncing task #{task_dict['id']} to Google Sheets: {e}")
 
     # Inline button for instant deletion by @orzmkh
     reply_markup = InlineKeyboardMarkup([
@@ -161,9 +229,24 @@ async def _process_and_create_task(update: Update, task_text: str):
     )
 
     try:
-        await message.reply_text(confirm_text, parse_mode="HTML", reply_markup=reply_markup)
+        await message.reply_text(
+            confirm_text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+            reply_to_message_id=message.message_id
+        )
+        logger.info(f"Sent confirmation reply for task #{task_dict['id']} to chat {message.chat_id}")
     except Exception as e:
-        logger.error(f"Failed to send task confirmation message: {e}")
+        logger.error(f"Failed to send task confirmation reply: {e}")
+        try:
+            await update.get_bot().send_message(
+                chat_id=message.chat_id,
+                text=confirm_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        except Exception as e2:
+            logger.error(f"Fallback send_message also failed: {e2}")
 
 
 async def delete_task_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

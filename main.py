@@ -19,6 +19,7 @@ from task_handlers import (
     dispute_callback_handler,
     dispute_reason_input_handler,
     delete_task_callback_handler,
+    rate_task_callback_handler,
     set_sheets_sync,
 )
 from task_report_handler import (
@@ -113,8 +114,9 @@ def main():
     application.add_handler(PrefixHandler("/", ["done", "готово", "выполнено"], done_task_handler))
     application.add_handler(PrefixHandler("/", ["reports", "отчеты", "отчёты"], list_reports_handler))
 
-    # 6. Register Dispute & Delete Handlers
+    # 6. Register Dispute, Delete & Rate Handlers
     application.add_handler(CallbackQueryHandler(delete_task_callback_handler, pattern="^delete_task_"))
+    application.add_handler(CallbackQueryHandler(rate_task_callback_handler, pattern="^rate_task_"))
     application.add_handler(CallbackQueryHandler(dispute_callback_handler, pattern="^dispute_task_"))
 
     # 7. Register Auto-detection Message Handler for non-command messages
