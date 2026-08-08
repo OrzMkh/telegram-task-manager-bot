@@ -184,8 +184,8 @@ class SheetsSyncManager:
                     break
             if target_row:
                 col = 10 if is_final else 8
-                self.sheet.update_cell(target_row, col, f"{rating}/5")
-                logger.info(f"Task #{task_id} rating updated to {rating}/5 in Google Sheets (col {col}).")
+                self.sheet.update_cell(target_row, col, str(rating))
+                logger.info(f"Task #{task_id} rating updated to {rating} in Google Sheets (col {col}).")
         except Exception as e:
             logger.error(f"Error updating task #{task_id} rating in Google Sheets: {e}")
 
