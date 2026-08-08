@@ -222,7 +222,7 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
                 InlineKeyboardButton("👤 Ильясбек (@isslamov)", callback_data=f"assign_isslamov_{message.message_id}"),
             ],
             [
-                InlineKeyboardButton("👤 Мужахидбек (@axi0603)", callback_data=f"assign_axi0603_{message.message_id}"),
+                InlineKeyboardButton("👤 Мужахид (@axi0603)", callback_data=f"assign_axi0603_{message.message_id}"),
             ],
             [
                 InlineKeyboardButton("👤 Жахангир (@Silent_trickster)", callback_data=f"assign_jahangir_{message.message_id}"),
@@ -324,9 +324,9 @@ async def delete_task_callback_handler(update: Update, context: ContextTypes.DEF
     user = query.from_user
     username = (user.username or "").lower().replace("@", "")
 
-    # Security check: ONLY @orzmkh or @axi0603 is allowed to delete tasks
-    if username not in ["orzmkh", "axi0603"]:
-        await query.answer("⛔ Только руководитель может удалять задачи!", show_alert=True)
+    # Security check: ONLY @orzmkh is allowed to delete tasks
+    if username != "orzmkh":
+        await query.answer("⛔ Только руководитель @orzmkh может удалять задачи!", show_alert=True)
         return
 
     if data.startswith("delete_task_"):
