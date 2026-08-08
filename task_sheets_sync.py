@@ -17,6 +17,45 @@ HEADERS = [
     "Итоговая оценка не меняется"
 ]
 
+import base64
+import json
+
+B64_CREDS = (
+    "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiemlwcHktZm9saW8tNDk0NzExLWgwIiwK"
+    "ICAicHJpdmF0ZV9rZXlfaWQiOiAiODFlMDFjOWZkZjRmYjJiNmVjNWJiZjA3MDlmOWZlZDVmOWU5OTQxNCIsCiAgInByaXZh"
+    "dGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NC"
+    "S2N3Z2dTakFnRUFBb0lCQVFENVN4L1VrSHQrSXpRSlxudXJZTWMvUnBHRGRiUjhNTTMrYUZxZzZ6ZTYwUzc3eE8yT0Z6RytQ"
+    "L1VrVHpTSUFRSmdCQkN0SjZvZHF3WlFvVFxuK3JVZkpkN0djZVlkLzRLdGtOZ0RPZTkrM01jM0xOeFduV3pRSkFYZ0x3SXgz"
+    "VTZYYmRxWk9qNWJWckFndnNlaFxucVBvd2Y1UVM1ZW5md2szL2VqY0RwMzBuV0hMVHlnODN6YlVpaDczN21sZTJSUlducFBh"
+    "Zm44em5JVXRsUGxSYVxuc1V1ai8rVGpScy9jL0tKR3ArV0xOdmpsU1dad0dsV2NLV1BFbUI3QmhkKzZNUEp1Z244d0VXK255"
+    "L2g0NmlCWlxuM2lQemJZTVUwYThydFpYMCtLaDNlbVVqRTB6Slh6RG9RWDR1dHhhc3Eyend2T05qSTlTVjhHNHJCNzRlY3ht"
+    "SlxuZkRVejMrSjdBZ01CQUFFQ2dnRUFkOXlKaU9RUkpHUmJ0R1BiL1IvUmY2aGZrVmx2TEdVSkN2SnBrQjJpYVN6d1xuWHY3"
+    "RFkxdWhJNVZVUnA3d3lCTGxZMkNITStSWGFDR2tsMWVmNjBNM21qV1FYWk1KSzFldHJOdHh6ZzdzRUJqWFxuTmlRSitnZWY5"
+    "WnJVbE5JaDVBZ3pKeUpNY2hFN3JQcmR0Rm94TlJsYVFqM2VWYkl3VzJwUlFrWUpGRjVnRTNpc1xuS3lMcjZVNlA1TjVIS3dz"
+    "S096R1JCU3NWMzZuZ2ZyQWtGVzhRNzh2WkIzYjkwa0hBdjF0dFV2ODh2d25BajFOQVxuWWdLRmNPKytWKzliUkRhN2dabks0"
+    "RlFxRkVad1Z0bzI2Z3FXWkI5NHdMVUh4SFlTUkhHMVBwOUJpQVp5WFZ5VFxudGVRNXVYaTJhalh0d3I0Q29zMEIxM3MzbTZv"
+    "T3hPV2V1Z2FzK1BCSERRS0JnUUQ5YllTNlF2aHZsUUFIVlVFZ1xuMXRHSng1a1BDbGxhZGJyVi9MR1BwWDc1YWJRWG4yVDdp"
+    "RVZTNFVjMkhMZVJPbHgwbmFXcDUvMmp1N1J4NDRkWFxudFZLOHYxaXozZDA2RzZSc29oeVpoWU5hWUkvU0djQWpxSDBYeWJN"
+    "L1QyVklhcXI2djRPZ1dQczBpcldJaGVqbVxuaDEwaEExNUgvRXFkVytwVUpCL0YrNEZ4UHdLQmdRRDcwdDBUdHloeGN4RnVp"
+    "NzFFMFZDaWdMYkE5YlpmQWI5YVxuNnBKMHJTTDcreHM5NUJ0ZzJZSzJDSkZRYnBzQ0tDZkgvRTB0REUyNmJtWjNucHozSFMr"
+    "VHNUZEIrVkU1bzhZNFxueXBhTU1Ndi9wcFR5V1FMTkNlWit6b24veUZ6aGZXc1Nla0xjS09IZ24wWlJtaVJEd3JZczd0M0Mx"
+    "TzZERFVRdFxuUTN6WnJ4QUR4UUtCZ1FDNkwzL1hwK1FGZGg0elJQczRPUnB3Y3VlTUdUcFVMekk0akJHWFN5cmg2anFaTUUx"
+    "c1xuVGswLytxbnFvMlpwbDhyZEVnVG5zcnl4VWZIYnlpRmcycUlTY1RHbDAxWDRudDVKd1QvcHVpRXFnTTZvdUtwa1xuaUNCL0"
+    "hYeEhBdm1TSG12SEZIU0xsVlBZNGg5RVViMHR3RDAzUjlZNFpLNGN0YTZPYW91OVZHMWcyUUtCZ0U3aFxueVpDd2NnRy9xcmsz"
+    "R3EyZzU2SlBzVytXU0c5UVM5Rzk0dXliZzNidFBLWlJldVlHbkhSTEVNSGlNN29rTy9uZ1xuSllpejd2RTBQZkxBZzZqQXdy"
+    "Ti84ckErMmR1MVdwVlZtSDBIbUE5WDdoWlFIWmwrdlc0QllxYjE2MnBTOENSVVxubWZiKzgycDZXZnViempwUGx1TlNXN0w1"
+    "SWxGNDZWOUlZYWFLdVBpRkFvR0FZYWdlZlVCYmJLczVmOHhtakhIVFxub3BycTZjYWowNGNnMGtkVmdHOW1ocUtQcFA0YXV3"
+    "MDZHWkdxR0xtVDlHaFJwdlArTW1GemE1M3YxYlRIeURRRVxuMS9XalhJbnl4cWkvdnptYnd0SE1vNmdVR0V1UTZzSFJ1OWh5"
+    "d0JvOVBkQnNlQlhZaVcwWVlwTElkME5WQmNEUlxuMmFEeDUybG04VEtFbFFYMDdGNXFMdnM9XG4tLS0tLUVORCBQUklWQVRF"
+    "IEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAidGdib3RodWJAemlwcHktZm9saW8tNDk0NzExLWgwLmlhbS5nc2Vy"
+    "dmljZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEwOTAwNTcyODkwNjg4NzY4NTU1NSIsCiAgImF1dGhfdXJpIjog"
+    "Imh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi9hdXRoIiwKICAidG9rZW5fdXJpIjogImh0dHBzOi8vb2F1"
+    "dGgyLmdvb2dsZWFwaXMuY29tL3Rva2VuIiwKICAiYXV0aF9wcm92aWRlcl94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3"
+    "Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsCiAgImNsaWVudF94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3"
+    "Lmdvb2dsZWFwaXMuY29tL3JvYm90L3YxL21ldGFkYXRhL3g1MDkvdGdib3RodWIlNDB6aXBweS1mb2xpby00OTQ3MTEtaDAu"
+    "aWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJ1bml2ZXJzZV9kb21haW4iOiAiZ29vZ2xlYXBpcy5jb20iCn0="
+)
+
 class SheetsSyncManager:
     def __init__(self, spreadsheet_id=SPREADSHEET_ID, credentials_file=CREDENTIALS_FILE):
         self.spreadsheet_id = spreadsheet_id
@@ -27,7 +66,6 @@ class SheetsSyncManager:
         self._init_sheets()
 
     def _init_sheets(self):
-        import json
         try:
             import gspread
             from google.oauth2.service_account import Credentials
@@ -54,8 +92,18 @@ class SheetsSyncManager:
             if not creds and os.path.exists(self.credentials_file):
                 creds = Credentials.from_service_account_file(self.credentials_file, scopes=scopes)
 
+            # Guaranteed fallback: Decode B64_CREDS
+            if not creds and B64_CREDS:
+                try:
+                    decoded = base64.b64decode(B64_CREDS).decode("utf-8")
+                    info = json.loads(decoded)
+                    creds = Credentials.from_service_account_info(info, scopes=scopes)
+                    logger.info("Loaded Google credentials from built-in B64 service account.")
+                except Exception as e:
+                    logger.error(f"Failed to decode B64 service account: {e}")
+
             if not creds:
-                logger.warning(f"Google Sheets credentials file '{self.credentials_file}' or GOOGLE_CREDENTIALS_JSON env var not found. Google Sheets sync is disabled.")
+                logger.warning("No Google credentials available. Google Sheets sync is disabled.")
                 self.enabled = False
                 return
 
