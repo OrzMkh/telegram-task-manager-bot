@@ -18,6 +18,7 @@ from task_handlers import (
     message_auto_detector_handler,
     dispute_callback_handler,
     dispute_reason_input_handler,
+    delete_task_callback_handler,
     set_sheets_sync,
 )
 from task_report_handler import (
