@@ -100,6 +100,12 @@ def main():
     application.add_handler(bike_report_conversation_handler)
 
     # 5. Register Command Handlers
+    application.add_handler(CommandHandler(["start", "help"], start_handler))
+    application.add_handler(CommandHandler(["task", "задача", "add"], task_command_handler))
+    application.add_handler(CommandHandler(["list", "задачи"], list_tasks_handler))
+    application.add_handler(CommandHandler(["done", "готово"], done_task_handler))
+    application.add_handler(CommandHandler(["reports", "отчеты", "отчёты"], list_reports_handler))
+
     application.add_handler(PrefixHandler("/", ["start", "help"], start_handler))
     application.add_handler(PrefixHandler("/", ["task", "задача", "add"], task_command_handler))
     application.add_handler(PrefixHandler("/", ["list", "задачи"], list_tasks_handler))

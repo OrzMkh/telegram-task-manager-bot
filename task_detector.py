@@ -33,24 +33,29 @@ def is_task_message(text: str, user=None, has_explicit_command: bool = False) ->
     if not text:
         return False
 
-    # 1. Author check: ONLY process messages from @orzmkh
-    if user:
-        username = getattr(user, "username", "") or ""
-        if username.lower() != "orzmkh":
-            return False
+    if has_explicit_command:
+        return True
 
     text_lower = text.lower().strip()
 
-    # 2. Keyword check: MUST contain 'задача', 'задачу', '/task', '/задача', '#задача'
-    has_task_kw = any(kw in text_lower for kw in ["задача", "задачу", "/task", "/задача", "#задача", "#task"])
-    if not has_task_kw and not has_explicit_command:
-        return False
+    # 1. Starts with commands or hashtags
+    if any(text_lower.startswith(prefix) for prefix in ["/task", "/задача", "/add", "#task", "#задача", "#todo"]):
+        return True
 
-    # 3. SLA check: MUST specify explicit SLA/deadline
-    if not has_explicit_sla(text_lower) and not has_explicit_command:
-        return False
+    # 2. Contains explicit task markers
+    if any(tag in text_lower for tag in ["#task", "#задача", "#todo", "/task", "/задача"]):
+        return True
 
-    return True
+    # 3. Action keywords
+    task_keywords = [
+        "задача", "задачу", "задание", "поручение",
+        "нужно сделать", "надо сделать", "сделай", "сделайте",
+        "проверь", "проверьте", "исправь", "исправьте",
+        "подготовь", "подготовьте", "создай", "создайте",
+        "напиши", "напишите", "отправь", "отправьте",
+        "доделай", "настрой"
+    ]
+    return any(kw in text_lower for kw in task_keywords)
 
 
 def extract_assignee(message) -> str:
