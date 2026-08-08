@@ -213,23 +213,23 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
 
         assign_keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("👤 @isslamov", callback_data="assign_isslamov"),
-                InlineKeyboardButton("👤 @ilyas", callback_data="assign_ilyas"),
+                InlineKeyboardButton("👤 Ильясбек (@isslamov)", callback_data="assign_isslamov"),
             ],
             [
-                InlineKeyboardButton("👤 @dilshod", callback_data="assign_dilshod"),
-                InlineKeyboardButton("👤 @rustam", callback_data="assign_rustam"),
+                InlineKeyboardButton("👤 Мужахидбек (@orzmkh)", callback_data="assign_orzmkh"),
             ],
             [
-                InlineKeyboardButton("👥 Команда", callback_data="assign_team"),
+                InlineKeyboardButton("👤 Жахангир (@Silent_trickster)", callback_data="assign_jahangir"),
+            ],
+            [
+                InlineKeyboardButton("👥 Вся команда", callback_data="assign_team"),
             ]
         ])
 
         await message.reply_text(
             f"⚠️ <b>Укажите исполнителя задачи!</b>\n\n"
             f"📋 <b>Задача:</b> {task_text}\n\n"
-            f"В сообщении нет тега сотрудника.\n"
-            f"Напишите тег следующим сообщением (например: <code>@isslamov</code>) или выберите из кнопок:",
+            f"Выберите исполнителя из списка ниже или отправьте тег следующим сообщением:",
             parse_mode="HTML",
             reply_markup=assign_keyboard,
             reply_to_message_id=message.message_id
@@ -439,9 +439,8 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     assignee_map = {
         "assign_isslamov": "@isslamov",
-        "assign_ilyas": "@ilyas",
-        "assign_dilshod": "@dilshod",
-        "assign_rustam": "@rustam",
+        "assign_orzmkh": "@orzmkh",
+        "assign_jahangir": "@Silent_trickster",
         "assign_team": "Команда",
     }
     assignee = assignee_map.get(data, "Команда")
