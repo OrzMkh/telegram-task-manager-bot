@@ -294,21 +294,37 @@ async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     data = query.data or ""
-    logger.info(f"=== DISPUTE CALLBACK TRIGGERED: {data} from user @{query.from_user.username} ({query.from_user.id}) ===")
-
-    # Immediately answer the callback query so Telegram stops blinking the button spinner
-    try:
-        await query.answer("⚖️ Оспаривание начато!\n\nНапишите в этот чат причину несогласия.", show_alert=True)
-    except Exception as e:
-        logger.error(f"Failed to answer callback query: {e}")
+    user = query.from_user
+    username = f"@{user.username}" if user.username else user.first_name
+    raw_uname = (user.username or "").lower().replace("@", "").strip()
 
     if data.startswith("dispute_task_"):
         task_id = data.replace("dispute_task_", "")
-        user = query.from_user
-        username = f"@{user.username}" if user.username else user.first_name
+        clean_num = int(str(task_id).replace("#", "").strip())
+        task = get_task(clean_num, db_path=DB_PATH) or {}
+        assignee = task.get("assignee", "")
+
+        # Check assignee permissions
+        if assignee and assignee not in ["Команда", "Сотрудник"]:
+            assignee_clean = assignee.lower().replace("@", "")
+            # Check if clicking user's username or name is part of the assignee string
+            is_allowed = (
+                (raw_uname and raw_uname in assignee_clean) or
+                (user.first_name and user.first_name.lower() in assignee_clean) or
+                (user.last_name and user.last_name.lower() in assignee_clean) or
+                (str(user.id) in assignee)
+            )
+            if not is_allowed:
+                await query.answer(f"⛔ Только исполнитель {assignee} может оспорить эту оценку!", show_alert=True)
+                return
+
+        # Authorized assignee -> Proceed with dispute
+        try:
+            await query.answer("⚖️ Оспаривание начато!\n\nНапишите в этот чат причину несогласия.", show_alert=True)
+        except Exception as e:
+            logger.error(f"Failed to answer callback query: {e}")
 
         context.user_data["awaiting_dispute_for_task"] = task_id
-
         chat_id = query.message.chat_id if query.message else int(TARGET_CHAT_ID)
 
         try:
