@@ -121,20 +121,22 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_auto_detector_handler), group=2)
 
 
-    # 6. Run Bot
+    # 8. Run Bot with Auto-Retry on Render Deploys
+    import time
     logger.info("Telegram Task Manager Bot started. Polling for updates...")
-    try:
-        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
-    except Exception as e:
-        if "Conflict" in str(e):
-            logger.error("=========================================================================")
-            logger.error(" ОШИБКА КОНФЛИКТА (telegram.error.Conflict):")
-            logger.error(" С этим BOT_TOKEN одновременно запущена ДРУГАЯ копия бота!")
-            logger.error(" 1. Остановите локальный запуск бота на компьютере (если он запущен).")
-            logger.error(" 2. Проверьте, нет ли других запущенных сервисов/контейнеров на Render.")
-            logger.error(" 3. Если ключ скомпрометирован — перевыпустите токен через @BotFather.")
-            logger.error("=========================================================================")
-        raise e
+    max_retries = 15
+    retry_delay = 5
+    for attempt in range(1, max_retries + 1):
+        try:
+            application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True, close_loop=False)
+            break
+        except Exception as e:
+            if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
+                logger.warning(f"Telegram Conflict (attempt {attempt}/{max_retries}): Previous container shutting down. Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"Unexpected bot polling error (attempt {attempt}/{max_retries}): {e}")
+                time.sleep(retry_delay)
 
 if __name__ == "__main__":
     main()
