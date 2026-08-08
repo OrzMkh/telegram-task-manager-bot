@@ -9,12 +9,12 @@ COMMANDS = [
 
 def is_authorized_author(user) -> bool:
     """
-    Rule 3: Only @orzmkh is allowed to create tasks.
+    Rule 3: Only @orzmkh / @axi0603 is allowed to create tasks.
     """
     if not user:
         return False
     username = (user.username or "").lower().replace("@", "").strip()
-    return username == "orzmkh"
+    return username in ["orzmkh", "axi0603"]
 
 
 def is_task_message(text: str, user=None, has_explicit_command: bool = False) -> bool:

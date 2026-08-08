@@ -222,7 +222,7 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
                 InlineKeyboardButton("👤 Ильясбек (@isslamov)", callback_data=f"assign_isslamov_{message.message_id}"),
             ],
             [
-                InlineKeyboardButton("👤 Мужахидбек (@orzmkh)", callback_data=f"assign_orzmkh_{message.message_id}"),
+                InlineKeyboardButton("👤 Мужахидбек (@axi0603)", callback_data=f"assign_axi0603_{message.message_id}"),
             ],
             [
                 InlineKeyboardButton("👤 Жахангир (@Silent_trickster)", callback_data=f"assign_jahangir_{message.message_id}"),
@@ -324,9 +324,9 @@ async def delete_task_callback_handler(update: Update, context: ContextTypes.DEF
     user = query.from_user
     username = (user.username or "").lower().replace("@", "")
 
-    # Security check: ONLY @orzmkh is allowed to delete tasks
-    if username != "orzmkh":
-        await query.answer("⛔ Только руководитель @orzmkh может удалять задачи!", show_alert=True)
+    # Security check: ONLY @orzmkh or @axi0603 is allowed to delete tasks
+    if username not in ["orzmkh", "axi0603"]:
+        await query.answer("⛔ Только руководитель может удалять задачи!", show_alert=True)
         return
 
     if data.startswith("delete_task_"):
@@ -441,7 +441,7 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     data = query.data or ""
     user = query.from_user
     if not is_authorized_author(user):
-        await query.answer("⛔ Только руководитель @orzmkh может назначать исполнителя!", show_alert=True)
+        await query.answer("⛔ Только руководитель может назначать исполнителя!", show_alert=True)
         return
 
     parts = data.split("_")
@@ -450,7 +450,8 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     assignee_map = {
         "assign_isslamov": "@isslamov",
-        "assign_orzmkh": "@orzmkh",
+        "assign_axi0603": "@axi0603",
+        "assign_orzmkh": "@axi0603",
         "assign_jahangir": "@Silent_trickster",
         "assign_team": "Команда",
     }
