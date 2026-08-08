@@ -8,8 +8,11 @@ NLP_KEYWORDS = [
     r"\bfix\b", r"\btodo\b"
 ]
 
-HASHTAGS = ["#задача", "#task", "#todo"]
-COMMANDS = ["/task", "/задача", "/add"]
+HASHTAGS = ["#задача", "#task", "#todo", "#задание"]
+COMMANDS = [
+    "/task", "/задача", "/add", "/newtask", "/todo",
+    "задача:", "задача", "задачу:", "задачу", "task:", "task", "todo:"
+]
 
 def has_explicit_sla(text: str) -> bool:
     if not text:
