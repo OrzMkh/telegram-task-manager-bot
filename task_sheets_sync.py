@@ -200,29 +200,13 @@ class SheetsSyncManager:
             for idx, val in enumerate(id_col_vals):
                 if str(val).strip() == str_id:
                     target_row = idx + 1
-                    # 1. Update status to 'Удалена'
-                    try:
-                        self.sheet.update_cell(target_row, 7, "Удалена")
-                    except Exception as e_st:
-                        logger.warning(f"Could not set status to Удалена: {e_st}")
-
-                    # 2. Delete the row from sheet
-                    try:
-                        self.sheet.delete_rows(target_row)
-                    except AttributeError:
-                        self.sheet.delete_row(target_row)
-                    except Exception as e_del:
-                        logger.warning(f"delete_rows failed, falling back to delete_row: {e_del}")
-                        try:
-                            self.sheet.delete_row(target_row)
-                        except Exception:
-                            pass
-
-                    logger.info(f"Task #{task_id} marked as 'Удалена' and deleted from Google Sheets (row {target_row}).")
+                    # Set Status (Column 7) to 'Удалена' so it is clearly visible in the sheet
+                    self.sheet.update_cell(target_row, 7, "Удалена")
+                    logger.info(f"Task #{task_id} status updated to 'Удалена' in Google Sheets (row {target_row}).")
                     return True
             return False
         except Exception as e:
-            logger.error(f"Error deleting task #{task_id} from Google Sheets: {e}")
+            logger.error(f"Error marking task #{task_id} as 'Удалена' in Google Sheets: {e}")
             return False
 
     def append_bike_report(self, report: dict):
