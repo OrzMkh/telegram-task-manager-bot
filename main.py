@@ -99,17 +99,17 @@ def main():
     # 4. Register Bike Report Conversation Handler (high priority)
     application.add_handler(bike_report_conversation_handler)
 
-    # 5. Register Command Handlers
+    # 5. Register Command Handlers (ASCII for CommandHandler, Multilingual for PrefixHandler)
     application.add_handler(CommandHandler(["start", "help"], start_handler))
-    application.add_handler(CommandHandler(["task", "задача", "add"], task_command_handler))
-    application.add_handler(CommandHandler(["list", "задачи"], list_tasks_handler))
-    application.add_handler(CommandHandler(["done", "готово"], done_task_handler))
-    application.add_handler(CommandHandler(["reports", "отчеты", "отчёты"], list_reports_handler))
+    application.add_handler(CommandHandler(["task", "add", "newtask"], task_command_handler))
+    application.add_handler(CommandHandler(["list", "tasks"], list_tasks_handler))
+    application.add_handler(CommandHandler(["done", "complete"], done_task_handler))
+    application.add_handler(CommandHandler(["reports"], list_reports_handler))
 
-    application.add_handler(PrefixHandler("/", ["start", "help"], start_handler))
+    application.add_handler(PrefixHandler("/", ["start", "help", "помощь"], start_handler))
     application.add_handler(PrefixHandler("/", ["task", "задача", "add"], task_command_handler))
     application.add_handler(PrefixHandler("/", ["list", "задачи"], list_tasks_handler))
-    application.add_handler(PrefixHandler("/", ["done", "готово"], done_task_handler))
+    application.add_handler(PrefixHandler("/", ["done", "готово", "выполнено"], done_task_handler))
     application.add_handler(PrefixHandler("/", ["reports", "отчеты", "отчёты"], list_reports_handler))
 
     # 6. Register Dispute & Delete Handlers
