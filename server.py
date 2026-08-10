@@ -27,13 +27,15 @@ else:
 
 BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")  # Rich bot DB (local fallback only)
 TASKS_DB_PATH = os.path.join(BASE_DIR, "tasks.db")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
-MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "9449").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "").strip()
+TASK_BOT_TOKEN = os.getenv("TASK_BOT_TOKEN") or BOT_TOKEN
+TASK_CHAT_ID = os.getenv("TARGET_CHAT_ID", "-1002638798110").strip()
 
 # URLs to the bot services on Render for user management sync
 RICH_BOT_URL = os.getenv("RICH_BOT_URL", "").strip().rstrip("/")
 FLEET_BOT_URL = os.getenv("FLEET_BOT_URL", "").strip().rstrip("/")
-INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "master_hub_secret_2025").strip()
+INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "").strip()
 
 try:
     import psycopg2
@@ -240,9 +242,9 @@ def init_tables():
         if c.fetchone()[0] == 0:
             now_str = datetime.datetime.now().strftime("%d.%m.%Y")
             c.executemany("INSERT INTO managed_bots (bot_name, bot_token, project_type, city_name, report_type, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [
-                ("FlitGo Bike Report Bot", "8123456789:AAXXXXXXXXXXXXXX", "FlitGo", "Ташкент", "Отчёт по байкам", 1, now_str),
-                ("FlitGo Task Bot", "8987654321:AAYYYYYYYYYYYYYY", "FlitGo", "Все города", "Управление задачами", 1, now_str),
-                ("Rich Hybrid Bot", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI", "Rich", "Все города", "Гибриды Rich", 1, now_str),
+                ("FlitGo Bike Report Bot", os.getenv("FLEET_BOT_TOKEN", ""), "FlitGo", "Ташкент", "Отчёт по байкам", 1, now_str),
+                ("FlitGo Task Bot", os.getenv("TASK_BOT_TOKEN", ""), "FlitGo", "Все города", "Управление задачами", 1, now_str),
+                ("Rich Hybrid Bot", os.getenv("BOT_TOKEN", ""), "Rich", "Все города", "Гибриды Rich", 1, now_str),
             ])
         c.execute("""
             CREATE TABLE IF NOT EXISTS task_archive (
@@ -1129,8 +1131,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             conn.commit()
             conn.close()
 
-            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
-            chat_id = "-1002638798110"
+            bot_token = TASK_BOT_TOKEN
+            chat_id = TASK_CHAT_ID
 
             prio_str = "🔴 Срочно (High)" if priority == "High" else ("🟡 Средний" if priority == "Medium" else "🟢 Обычный")
 
@@ -1218,8 +1220,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         # Send completion notification to Telegram group
         try:
-            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
-            chat_id = "-1002638798110"
+            bot_token = TASK_BOT_TOKEN
+            chat_id = TASK_CHAT_ID
             safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             msg_text = (
@@ -1300,7 +1302,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         # Send Telegram notification
         try:
-            bot_token = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
+            bot_token = TASK_BOT_TOKEN
             chat_id = "-1002638798110"
             stars_str = "⭐️" * rating
 
