@@ -29,7 +29,7 @@ BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")  # Rich bot DB (local 
 TASKS_DB_PATH = os.path.join(BASE_DIR, "tasks.db")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "").strip()
-TASK_BOT_TOKEN = os.getenv("TASK_BOT_TOKEN") or BOT_TOKEN
+TASK_BOT_TOKEN = (os.getenv("TASK_BOT_TOKEN") or BOT_TOKEN or "").strip()
 TASK_CHAT_ID = os.getenv("TARGET_CHAT_ID", "-1002638798110").strip()
 
 # URLs to the bot services on Render for user management sync
