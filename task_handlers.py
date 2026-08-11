@@ -99,24 +99,34 @@ async def my_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    msg = f"📋 <b>АКТИВНЫЕ ЗАДАЧИ ({display_name}):</b>\n\n"
+    task_blocks = []
     for t in user_tasks:
-        assignee_str = t.get("assignee", "Команда")
-        author_str = t.get("author", "Руководитель")
-        sla_deadline = t.get("sla_deadline", "Не указан")
-        task_text = t.get("task_text", "")
+        t_id = t.get("id")
+        t_text = t.get("task_text", "")
+        sla = t.get("sla_deadline", "Не указан")
         status_raw = str(t.get("status", "Active"))
         status_label = "⏳ В работе" if status_raw.lower() in ("active", "в работе") else f"⚠️ {status_raw}"
+        msg_link = t.get("message_link", "").strip()
 
-        msg += (
-            f"🔹 <b>#{t['id']}</b> — {task_text}\n"
-            f"⏰ <b>Дедлайн (SLA):</b> {sla_deadline}\n"
-            f"📊 <b>Статус:</b> {status_label}\n"
-            f"👤 <b>Исполнитель:</b> {assignee_str} | ✍️ <b>Автор:</b> {author_str}\n\n"
-        )
+        block_lines = [f"🔹 <b>#{t_id}</b>", t_text]
+        if msg_link:
+            block_lines.append(f"🔗 <a href=\"{msg_link}\">Ссылка на сообщение</a>")
+        block_lines.append(f"\n⏰ <b>Дедлайн (SLA):</b> {sla}")
+        block_lines.append(f"📊 <b>Статус:</b> {status_label}")
 
-    msg += f"━━━━━━━━━━━━━━━━━━\n<i>💡 Всего активных задач: {len(user_tasks)}</i>"
-    await update.message.reply_text(msg, parse_mode="HTML")
+        task_blocks.append("\n".join(block_lines))
+
+    separator = "\n\n──────────────────\n\n"
+    body = separator.join(task_blocks)
+
+    assignees = list(dict.fromkeys([t.get("assignee", display_name) for t in user_tasks if t.get("assignee")]))
+    authors = list(dict.fromkeys([t.get("author", "@orzmkh") for t in user_tasks if t.get("author")]))
+    assignee_str = ", ".join(assignees) if assignees else display_name
+    author_str = ", ".join(authors) if authors else "@orzmkh"
+
+    footer = f"\n\n━━━━━━━━━━━━━━━━━━\n👤 <b>Исполнитель:</b> {assignee_str} | ✍️ <b>Автор:</b> {author_str}"
+    msg = body + footer
+    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
 
 
@@ -128,27 +138,45 @@ async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if target_user:
         active_tasks = get_user_tasks(target_user, status="Active", db_path=DB_PATH, sheets_sync=sheets_sync_instance)
         display_user = target_user if target_user.startswith("@") else f"@{target_user}"
-        header = f"📋 <b>АКТИВНЫЕ ЗАДАЧИ ({display_user}):</b>\n\n"
         empty_text = f"📌 На данный момент нет активных задач для {display_user}."
     else:
         active_tasks = get_all_tasks(db_path=DB_PATH, status="Active", sheets_sync=sheets_sync_instance)
-        header = "📋 <b>ВСЕ АКТИВНЫЕ ЗАДАЧИ:</b>\n\n"
+        display_user = "Все сотрудники"
         empty_text = "📌 На данный момент нет активных задач."
-
 
     if not active_tasks:
         await update.message.reply_text(empty_text, parse_mode="HTML")
         return
 
-    msg = header
+    task_blocks = []
     for t in active_tasks:
-        msg += (
-            f"🔹 <b>#{t['id']}</b> — {t['task_text']}\n"
-            f"👤 <b>Исполнитель:</b> {t['assignee']} | ✍️ <b>Автор:</b> {t['author']}\n"
-            f"⏰ <b>SLA:</b> {t['sla_deadline']}\n\n"
-        )
-    msg += f"━━━━━━━━━━━━━━━━━━\n<i>💡 Всего активных задач: {len(active_tasks)}</i>"
-    await update.message.reply_text(msg, parse_mode="HTML")
+        t_id = t.get("id")
+        t_text = t.get("task_text", "")
+        sla = t.get("sla_deadline", "Не указан")
+        status_raw = str(t.get("status", "Active"))
+        status_label = "⏳ В работе" if status_raw.lower() in ("active", "в работе") else f"⚠️ {status_raw}"
+        msg_link = t.get("message_link", "").strip()
+
+        block_lines = [f"🔹 <b>#{t_id}</b>", t_text]
+        if msg_link:
+            block_lines.append(f"🔗 <a href=\"{msg_link}\">Ссылка на сообщение</a>")
+        block_lines.append(f"\n⏰ <b>Дедлайн (SLA):</b> {sla}")
+        block_lines.append(f"📊 <b>Статус:</b> {status_label}")
+
+        task_blocks.append("\n".join(block_lines))
+
+    separator = "\n\n──────────────────\n\n"
+    body = separator.join(task_blocks)
+
+    assignees = list(dict.fromkeys([t.get("assignee", "") for t in active_tasks if t.get("assignee")]))
+    authors = list(dict.fromkeys([t.get("author", "@orzmkh") for t in active_tasks if t.get("author")]))
+    assignee_str = ", ".join(assignees) if assignees else display_user
+    author_str = ", ".join(authors) if authors else "@orzmkh"
+
+    footer = f"\n\n━━━━━━━━━━━━━━━━━━\n👤 <b>Исполнитель:</b> {assignee_str} | ✍️ <b>Автор:</b> {author_str}"
+    msg = body + footer
+    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+
 
 
 
@@ -274,6 +302,15 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
     assignee = override_assignee or extract_assignee(message)
     author = extract_author(message)
 
+    # Determine message link
+    target_msg = message.reply_to_message or message
+    target_msg_id = target_msg.message_id
+    if message.chat.username:
+        msg_link = f"https://t.me/{message.chat.username}/{target_msg_id}"
+    else:
+        clean_cid = str(message.chat_id).replace("-100", "")
+        msg_link = f"https://t.me/c/{clean_cid}/{target_msg_id}"
+
     # If no @mention in text, do NOT assign replied user. Ask @orzmkh for assignee!
     if not assignee:
         task_draft = {
@@ -281,7 +318,8 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
             "author": author,
             "raw_text": message.text or message.caption or task_text,
             "chat_id": message.chat_id,
-            "message_id": message.message_id
+            "message_id": target_msg_id,
+            "message_link": msg_link
         }
         GLOBAL_PENDING_TASKS[str(message.message_id)] = task_draft
         GLOBAL_PENDING_TASKS[str(message.from_user.id)] = task_draft
@@ -328,8 +366,10 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
         author=author,
         sla_deadline=sla_str,
         created_at=created_at_str,
+        message_link=msg_link,
         db_path=DB_PATH
     )
+
 
     canonical_id = task_dict.get("id")
 
@@ -576,6 +616,7 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         author=author,
         sla_deadline=sla_str,
         created_at=created_at_str,
+        message_link=pending.get("message_link", ""),
         db_path=DB_PATH
     )
 
@@ -648,8 +689,10 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
             author=author,
             sla_deadline=sla_str,
             created_at=created_at_str,
+            message_link=pending.get("message_link", ""),
             db_path=DB_PATH
         )
+
         canonical_id = task_dict.get("id")
 
         if sheets_sync_instance:

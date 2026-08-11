@@ -146,6 +146,7 @@ class SheetsSyncManager:
             sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
             date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
             stat_idx = headers.index("Статус") if "Статус" in headers else 6
+            link_idx = headers.index("Ссылка на сообщение") if "Ссылка на сообщение" in headers else (headers.index("Ссылка") if "Ссылка" in headers else 10)
 
             tasks = []
             for r in rows[1:]:
@@ -156,6 +157,8 @@ class SheetsSyncManager:
                 except Exception:
                     continue
 
+                msg_link = r[link_idx] if len(r) > link_idx else ""
+
                 tasks.append({
                     "id": task_id,
                     "task_text": r[text_idx] if len(r) > text_idx else "",
@@ -164,6 +167,7 @@ class SheetsSyncManager:
                     "sla_deadline": r[sla_idx] if len(r) > sla_idx else "",
                     "created_at": r[date_idx] if len(r) > date_idx else "",
                     "status": r[stat_idx] if len(r) > stat_idx else "Active",
+                    "message_link": msg_link
                 })
 
             self._tasks_cache = tasks
@@ -194,16 +198,21 @@ class SheetsSyncManager:
 
             row = [
                 str(next_id),
-                task["task_text"],
-                task["assignee"],
-                task["author"],
-                task["sla_deadline"],
-                task["created_at"],
-                task["status"]
+                task.get("task_text", ""),
+                task.get("assignee", ""),
+                task.get("author", ""),
+                task.get("sla_deadline", ""),
+                task.get("created_at", ""),
+                task.get("status", "Active"),
+                "",
+                "",
+                "",
+                task.get("message_link", "")
             ]
             self.sheet.append_row(row)
             logger.info(f"Task #{next_id} appended to Google Sheets.")
             return next_id
+
         except Exception as e:
             logger.error(f"Error appending task #{task.get('id')} to Google Sheets: {e}")
             return None

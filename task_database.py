@@ -138,7 +138,8 @@ def init_db(db_path="tasks.db"):
             ("rating_comment", "TEXT"),
             ("initial_rating", "INTEGER DEFAULT 0"),
             ("final_rating", "INTEGER DEFAULT 0"),
-            ("is_disputed", "INTEGER DEFAULT 0")
+            ("is_disputed", "INTEGER DEFAULT 0"),
+            ("message_link", "TEXT DEFAULT ''")
         ]
         cursor.execute("PRAGMA table_info(tasks)")
         existing_cols = [row[1] for row in cursor.fetchall()]
@@ -150,13 +151,13 @@ def init_db(db_path="tasks.db"):
                     pass
         conn.commit()
 
-def add_task(task_text: str, assignee: str, author: str, sla_deadline: str, created_at: str, db_path="tasks.db") -> dict:
+def add_task(task_text: str, assignee: str, author: str, sla_deadline: str, created_at: str, message_link: str = "", db_path="tasks.db") -> dict:
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO tasks (task_text, assignee, author, sla_deadline, created_at, status, reminder_sent)
-            VALUES (?, ?, ?, ?, ?, 'Active', 0)
-        """, (task_text, assignee, author, sla_deadline, created_at))
+            INSERT INTO tasks (task_text, assignee, author, sla_deadline, created_at, status, reminder_sent, message_link)
+            VALUES (?, ?, ?, ?, ?, 'Active', 0, ?)
+        """, (task_text, assignee, author, sla_deadline, created_at, message_link))
         conn.commit()
         task_id = cursor.lastrowid
         return {
@@ -167,8 +168,10 @@ def add_task(task_text: str, assignee: str, author: str, sla_deadline: str, crea
             "sla_deadline": sla_deadline,
             "created_at": created_at,
             "status": "Active",
-            "reminder_sent": 0
+            "reminder_sent": 0,
+            "message_link": message_link
         }
+
 
 def get_task(task_id: int, db_path="tasks.db") -> dict | None:
     with get_connection(db_path) as conn:
