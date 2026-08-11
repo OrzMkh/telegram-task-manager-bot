@@ -75,23 +75,21 @@ async def my_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # If an argument is provided (e.g. /my @isslamov or /мои @isslamov)
-    target_tag = ""
     if context.args:
-        target_tag = context.args[0].strip()
-    elif user.username:
-        target_tag = f"@{user.username}"
-    elif user.first_name:
-        target_tag = user.first_name.strip()
-
-    if not target_tag:
-        await update.message.reply_text(
-            "⚠️ Не удалось определить ваш username в Telegram. Пожалуйста, установите @username в настройках профиля Telegram.",
-            parse_mode="HTML"
-        )
-        return
+        target_tag = " ".join(context.args).strip()
+        display_name = target_tag if target_tag.startswith("@") else f"@{target_tag}"
+    else:
+        parts = []
+        if user.username:
+            parts.append(f"@{user.username}")
+        if user.first_name:
+            parts.append(user.first_name)
+        if user.last_name:
+            parts.append(user.last_name)
+        target_tag = " ".join(parts).strip()
+        display_name = f"@{user.username}" if user.username else (user.first_name or f"ID:{user.id}")
 
     user_tasks = get_user_tasks(target_tag, status="Active", db_path=DB_PATH)
-    display_name = target_tag if target_tag.startswith("@") else f"@{target_tag}"
 
     if not user_tasks:
         await update.message.reply_text(
@@ -107,15 +105,19 @@ async def my_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         author_str = t.get("author", "Руководитель")
         sla_deadline = t.get("sla_deadline", "Не указан")
         task_text = t.get("task_text", "")
+        status_raw = str(t.get("status", "Active"))
+        status_label = "⏳ В работе" if status_raw.lower() in ("active", "в работе") else f"⚠️ {status_raw}"
 
         msg += (
             f"🔹 <b>#{t['id']}</b> — {task_text}\n"
             f"⏰ <b>Дедлайн (SLA):</b> {sla_deadline}\n"
+            f"📊 <b>Статус:</b> {status_label}\n"
             f"👤 <b>Исполнитель:</b> {assignee_str} | ✍️ <b>Автор:</b> {author_str}\n\n"
         )
 
     msg += f"━━━━━━━━━━━━━━━━━━\n<i>💡 Всего активных задач: {len(user_tasks)}</i>"
     await update.message.reply_text(msg, parse_mode="HTML")
+
 
 
 async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

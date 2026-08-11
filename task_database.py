@@ -56,7 +56,10 @@ class PostgresConnectionWrapper:
         self._conn = conn
         
     def cursor(self):
+        if HAS_POSTGRES:
+            return PostgresCursorWrapper(self._conn.cursor(cursor_factory=RealDictCursor))
         return PostgresCursorWrapper(self._conn.cursor())
+
         
     def commit(self):
         self._conn.commit()
@@ -177,49 +180,76 @@ def get_task(task_id: int, db_path="tasks.db") -> dict | None:
 def get_all_tasks(db_path="tasks.db", status: str = None) -> list[dict]:
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
-        if status:
-            cursor.execute("SELECT * FROM tasks WHERE status = ? ORDER BY id DESC", (status,))
-        else:
-            cursor.execute("SELECT * FROM tasks ORDER BY id DESC")
+        cursor.execute("SELECT * FROM tasks ORDER BY id DESC")
         rows = cursor.fetchall()
-        return [dict(r) for r in rows]
+        tasks = [dict(r) for r in rows] if rows else []
+        if status:
+            target_st = status.strip().lower()
+            if target_st in ("active", "активные", "активна", "активно"):
+                # Active means anything not completed or deleted (includes Active, Expired, Disputed)
+                return [
+                    t for t in tasks 
+                    if str(t.get("status", "")).strip().lower() not in (
+                        "completed", "done", "deleted", "выполнено", "выполнена", "удалена", "завершена"
+                    )
+                ]
+            else:
+                return [t for t in tasks if str(t.get("status", "")).strip().lower() == target_st]
+        return tasks
 
 def get_user_tasks(username_or_query: str, status: str = "Active", db_path="tasks.db") -> list[dict]:
-    with get_connection(db_path) as conn:
-        cursor = conn.cursor()
-        clean = (username_or_query or "").lower().replace("@", "").strip()
-        if not clean:
-            if status:
-                cursor.execute("SELECT * FROM tasks WHERE status = ? ORDER BY id DESC", (status,))
-            else:
-                cursor.execute("SELECT * FROM tasks ORDER BY id DESC")
-            rows = cursor.fetchall()
-            return [dict(r) for r in rows]
+    all_tasks = get_all_tasks(db_path=db_path, status=status)
+    if not username_or_query:
+        return all_tasks
 
-        search_pattern = f"%{clean}%"
-        if status:
-            cursor.execute("""
-                SELECT * FROM tasks 
-                WHERE status = ? 
-                  AND (
-                      LOWER(assignee) LIKE ? 
-                      OR LOWER(assignee) LIKE '%команда%' 
-                      OR LOWER(assignee) LIKE '%всей команде%'
-                  )
-                ORDER BY id DESC
-            """, (status, search_pattern))
-        else:
-            cursor.execute("""
-                SELECT * FROM tasks 
-                WHERE (
-                    LOWER(assignee) LIKE ? 
-                    OR LOWER(assignee) LIKE '%команда%' 
-                    OR LOWER(assignee) LIKE '%всей команде%'
-                )
-                ORDER BY id DESC
-            """, (search_pattern,))
-        rows = cursor.fetchall()
-        return [dict(r) for r in rows]
+    query_str = (username_or_query or "").lower().strip()
+    tokens = [t.replace("@", "").strip() for t in query_str.split() if t.replace("@", "").strip()]
+    if not tokens:
+        return all_tasks
+
+    # Team leads mapping for known aliases
+    alias_map = {
+        "axi0603": ["axi0603", "мужохид", "мужахид", "мужохиджон", "мужахиджон", "axadov"],
+        "isslamov": ["isslamov", "ильяс", "ильясбек", "иляс"],
+        "silent_trickster": ["silent_trickster", "silenttrickster", "жахангир", "джахангир", "jahangir"],
+        "orzmkh": ["orzmkh", "орзу", "орзубек"]
+    }
+
+    all_search_terms = set(tokens)
+    for tok in tokens:
+        tok_clean = tok.replace("_", "")
+        all_search_terms.add(tok_clean)
+        for key, aliases in alias_map.items():
+            if tok == key or tok_clean == key.replace("_", "") or tok in aliases:
+                all_search_terms.update(aliases)
+                all_search_terms.add(key)
+                all_search_terms.add(key.replace("_", ""))
+
+    team_keywords = ["команда", "команде", "команду", "всем", "вся команда", "всей команде", "все"]
+
+    matched = []
+    for t in all_tasks:
+        assignee_raw = str(t.get("assignee", "")).lower()
+        assignee_clean = assignee_raw.replace("@", "").replace("_", "")
+
+        is_match = False
+        for term in all_search_terms:
+            term_clean = term.replace("@", "").replace("_", "")
+            if term_clean and (term_clean in assignee_clean or term in assignee_raw):
+                is_match = True
+                break
+
+        if not is_match:
+            for kw in team_keywords:
+                if kw in assignee_raw:
+                    is_match = True
+                    break
+
+        if is_match:
+            matched.append(t)
+
+    return matched
+
 
 
 def update_task_status(task_id: int, status: str, db_path="tasks.db") -> bool:
