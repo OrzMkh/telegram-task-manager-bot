@@ -184,6 +184,44 @@ def get_all_tasks(db_path="tasks.db", status: str = None) -> list[dict]:
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
+def get_user_tasks(username_or_query: str, status: str = "Active", db_path="tasks.db") -> list[dict]:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        clean = (username_or_query or "").lower().replace("@", "").strip()
+        if not clean:
+            if status:
+                cursor.execute("SELECT * FROM tasks WHERE status = ? ORDER BY id DESC", (status,))
+            else:
+                cursor.execute("SELECT * FROM tasks ORDER BY id DESC")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
+        search_pattern = f"%{clean}%"
+        if status:
+            cursor.execute("""
+                SELECT * FROM tasks 
+                WHERE status = ? 
+                  AND (
+                      LOWER(assignee) LIKE ? 
+                      OR LOWER(assignee) LIKE '%команда%' 
+                      OR LOWER(assignee) LIKE '%всей команде%'
+                  )
+                ORDER BY id DESC
+            """, (status, search_pattern))
+        else:
+            cursor.execute("""
+                SELECT * FROM tasks 
+                WHERE (
+                    LOWER(assignee) LIKE ? 
+                    OR LOWER(assignee) LIKE '%команда%' 
+                    OR LOWER(assignee) LIKE '%всей команде%'
+                )
+                ORDER BY id DESC
+            """, (search_pattern,))
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
 def update_task_status(task_id: int, status: str, db_path="tasks.db") -> bool:
     with get_connection(db_path) as conn:
         cursor = conn.cursor()

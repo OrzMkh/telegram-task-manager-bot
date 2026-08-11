@@ -3,7 +3,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
-from task_database import add_task, get_all_tasks, get_task, update_task_status, delete_task
+from task_database import add_task, get_all_tasks, get_user_tasks, get_task, update_task_status, delete_task
 from task_sheets_sync import SheetsSyncManager
 from task_detector import (
     is_task_message,
@@ -32,12 +32,13 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Начните сообщение с буквы <b>«З»</b> (например: <code>З @isslamov проверить байки</code>).\n"
         "• Или сделайте Reply на сообщение/голосовое сотрудника с буквой <b>«З»</b>.\n"
         "• Команды: <code>/task &lt;текст&gt;</code> или <code>/задача &lt;текст&gt;</code>.\n\n"
-        "<b>📋 Управление:</b>\n"
-        "• <code>/list</code> или <code>/задачи</code> — Список активных задач.\n"
+        "<b>📋 Управление и просмотр:</b>\n"
+        "• <code>/my</code> или <code>/мои</code> — Показать только ваши актуальные задачи.\n"
+        "• <code>/list</code> или <code>/задачи</code> — Список всех активных задач (или <code>/list @username</code>).\n"
         "• <code>/done &lt;ID&gt;</code> — Оценить и завершить задачу."
     )
     keyboard = ReplyKeyboardMarkup(
-        [["📝 Заполнить отчёт (Байки)"], ["/list", "/reports"]],
+        [["📋 Мои задачи", "📝 Заполнить отчёт (Байки)"], ["/list", "/reports"]],
         resize_keyboard=True
     )
     await update.message.reply_text(help_text, parse_mode="HTML", reply_markup=keyboard)
@@ -65,20 +66,87 @@ async def task_command_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     await _process_and_create_task(update, task_raw_text, context=context)
 
 
-async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    active_tasks = get_all_tasks(db_path=DB_PATH, status="Active")
-    if not active_tasks:
-        await update.message.reply_text("📌 На данный момент нет активных задач.")
+async def my_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
         return
 
-    msg = "📋 <b>АКТИВНЫЕ ЗАДАЧИ:</b>\n\n"
+    user = update.message.from_user
+    if not user:
+        return
+
+    # If an argument is provided (e.g. /my @isslamov or /мои @isslamov)
+    target_tag = ""
+    if context.args:
+        target_tag = context.args[0].strip()
+    elif user.username:
+        target_tag = f"@{user.username}"
+    elif user.first_name:
+        target_tag = user.first_name.strip()
+
+    if not target_tag:
+        await update.message.reply_text(
+            "⚠️ Не удалось определить ваш username в Telegram. Пожалуйста, установите @username в настройках профиля Telegram.",
+            parse_mode="HTML"
+        )
+        return
+
+    user_tasks = get_user_tasks(target_tag, status="Active", db_path=DB_PATH)
+    display_name = target_tag if target_tag.startswith("@") else f"@{target_tag}"
+
+    if not user_tasks:
+        await update.message.reply_text(
+            f"🎉 <b>У вас нет активных задач ({display_name})!</b>\n\n"
+            f"Все задачи выполнены или вам пока ничего не назначено.",
+            parse_mode="HTML"
+        )
+        return
+
+    msg = f"📋 <b>АКТИВНЫЕ ЗАДАЧИ ({display_name}):</b>\n\n"
+    for t in user_tasks:
+        assignee_str = t.get("assignee", "Команда")
+        author_str = t.get("author", "Руководитель")
+        sla_deadline = t.get("sla_deadline", "Не указан")
+        task_text = t.get("task_text", "")
+
+        msg += (
+            f"🔹 <b>#{t['id']}</b> — {task_text}\n"
+            f"⏰ <b>Дедлайн (SLA):</b> {sla_deadline}\n"
+            f"👤 <b>Исполнитель:</b> {assignee_str} | ✍️ <b>Автор:</b> {author_str}\n\n"
+        )
+
+    msg += f"━━━━━━━━━━━━━━━━━━\n<i>💡 Всего активных задач: {len(user_tasks)}</i>"
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
+    target_user = context.args[0].strip() if context.args else None
+    if target_user:
+        active_tasks = get_user_tasks(target_user, status="Active", db_path=DB_PATH)
+        display_user = target_user if target_user.startswith("@") else f"@{target_user}"
+        header = f"📋 <b>АКТИВНЫЕ ЗАДАЧИ ({display_user}):</b>\n\n"
+        empty_text = f"📌 На данный момент нет активных задач для {display_user}."
+    else:
+        active_tasks = get_all_tasks(db_path=DB_PATH, status="Active")
+        header = "📋 <b>ВСЕ АКТИВНЫЕ ЗАДАЧИ:</b>\n\n"
+        empty_text = "📌 На данный момент нет активных задач."
+
+    if not active_tasks:
+        await update.message.reply_text(empty_text, parse_mode="HTML")
+        return
+
+    msg = header
     for t in active_tasks:
         msg += (
             f"🔹 <b>#{t['id']}</b> — {t['task_text']}\n"
             f"👤 <b>Исполнитель:</b> {t['assignee']} | ✍️ <b>Автор:</b> {t['author']}\n"
             f"⏰ <b>SLA:</b> {t['sla_deadline']}\n\n"
         )
+    msg += f"━━━━━━━━━━━━━━━━━━\n<i>💡 Всего активных задач: {len(active_tasks)}</i>"
     await update.message.reply_text(msg, parse_mode="HTML")
+
 
 
 async def done_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

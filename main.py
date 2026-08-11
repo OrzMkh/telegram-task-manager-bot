@@ -13,6 +13,7 @@ from task_sheets_sync import SheetsSyncManager
 from task_handlers import (
     start_handler,
     task_command_handler,
+    my_tasks_handler,
     list_tasks_handler,
     done_task_handler,
     message_auto_detector_handler,
@@ -105,23 +106,28 @@ def main():
     # 5. Register Command Handlers (ASCII for CommandHandler, Multilingual for PrefixHandler)
     application.add_handler(CommandHandler(["start", "help"], start_handler))
     application.add_handler(CommandHandler(["task", "add", "newtask"], task_command_handler))
+    application.add_handler(CommandHandler(["my", "mytasks", "my_tasks"], my_tasks_handler))
     application.add_handler(CommandHandler(["list", "tasks"], list_tasks_handler))
     application.add_handler(CommandHandler(["done", "complete"], done_task_handler))
     application.add_handler(CommandHandler(["reports"], list_reports_handler))
 
     application.add_handler(PrefixHandler("/", ["start", "help", "помощь"], start_handler))
     application.add_handler(PrefixHandler("/", ["task", "задача", "add"], task_command_handler))
+    application.add_handler(PrefixHandler("/", ["my", "mytasks", "my_tasks", "мои", "мои_задачи", "моизадачи"], my_tasks_handler))
     application.add_handler(PrefixHandler("/", ["list", "задачи"], list_tasks_handler))
     application.add_handler(PrefixHandler("/", ["done", "готово", "выполнено"], done_task_handler))
     application.add_handler(PrefixHandler("/", ["reports", "отчеты", "отчёты"], list_reports_handler))
 
-    # 6. Register Dispute, Delete, Assign & Rate Handlers
+    # 6. Button text handler for "📋 Мои задачи"
+    application.add_handler(MessageHandler(filters.Regex(r"^(📋\s*Мои задачи|Мои задачи)$"), my_tasks_handler))
+
+    # 7. Register Dispute, Delete, Assign & Rate Handlers
     application.add_handler(CallbackQueryHandler(delete_task_callback_handler, pattern="^delete_task_"))
     application.add_handler(CallbackQueryHandler(rate_task_callback_handler, pattern="^rate_task_"))
     application.add_handler(CallbackQueryHandler(dispute_callback_handler, pattern="^dispute_task_"))
     application.add_handler(CallbackQueryHandler(assign_callback_handler, pattern="^assign_"))
 
-    # 7. Register Auto-detection Message Handler for non-command messages
+    # 8. Register Auto-detection Message Handler for non-command messages
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), dispute_reason_input_handler), group=1)
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_auto_detector_handler), group=2)
 
