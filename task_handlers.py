@@ -490,15 +490,16 @@ async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT
     raw_uname = (user.username or "").lower().replace("@", "").strip()
 
     if data.startswith("dispute_task_"):
-        parts = data.split("_")
-        task_id = parts[2] if len(parts) >= 3 else data.replace("dispute_task_", "")
-        cb_assignee = parts[3] if len(parts) >= 4 else ""
+        raw_payload = data[len("dispute_task_"):]
+        parts = raw_payload.split("_", 1)
+        task_id = parts[0]
+        cb_assignee = parts[1] if len(parts) > 1 else ""
 
         clean_num = int(str(task_id).replace("#", "").strip())
         task = get_task(clean_num, db_path=DB_PATH) or {}
 
         # 1. Determine target assignee from multiple sources
-        assignee = cb_assignee or task.get("assignee", "")
+        assignee = task.get("assignee", "") or cb_assignee
         msg_text = (query.message.text or query.message.caption or "") if query.message else ""
 
         if not assignee and "Исполнитель:" in msg_text:
@@ -523,18 +524,33 @@ async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT
             assignee_clean = assignee.lower().replace("@", "")
             allowed_tokens = [tok.strip("@,").lower() for tok in assignee.split() if tok.strip("@,")]
 
+            lead_aliases = {
+                "silent_trickster": ["silent_trickster", "silenttrickster", "жахабек", "жахангир", "жахонгир", "жаха", "jaxa", "jakha", "silent"],
+                "isslamov": ["isslamov", "isslaamov", "ильясбек", "ильяс", "ilyas"],
+                "axi0603": ["axi0603", "мужахидбек", "мужахид", "mujahid", "axi", "orzmkh"]
+            }
+
             is_allowed = (
-                (raw_uname and (raw_uname in assignee_clean or raw_uname in allowed_tokens)) or
+                (raw_uname and (raw_uname in assignee_clean or assignee_clean in raw_uname or raw_uname in allowed_tokens)) or
                 (user.first_name and user.first_name.lower() in assignee_clean) or
                 (user.last_name and user.last_name.lower() in assignee_clean) or
                 (str(user.id) in assignee)
             )
 
+            # Check lead aliases match
+            if not is_allowed:
+                for lead_key, aliases in lead_aliases.items():
+                    if (raw_uname and raw_uname in aliases) or (user.first_name and any(a in user.first_name.lower() for a in aliases)):
+                        if any(a in assignee_clean for a in aliases):
+                            is_allowed = True
+                            break
+
             if not is_allowed:
                 display_asgn = assignee if assignee.startswith("@") else f"@{assignee}"
                 await query.answer(f"⛔ Оспорить оценку может только исполнитель {display_asgn}!", show_alert=True)
-                logger.warning(f"Denied dispute attempt by @{user.username} on task #{clean_num} (assigned to {assignee})")
+                logger.warning(f"Denied dispute attempt by @{user.username} (name={user.first_name}) on task #{clean_num} (assigned to {assignee})")
                 return
+
 
         # Authorized assignee -> Proceed with dispute
         try:

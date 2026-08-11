@@ -1623,8 +1623,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         team_leads = [
             {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "patterns": ["isslaamov", "isslamov", "ильясбек", "ilyas"]},
             {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "patterns": ["axi0603", "axi", "мужахид", "mujahid"]},
-            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "patterns": ["silent_trickster", "silenttrickster", "jaxa", "жаха", "jakha"]}
+            {"name": "Жахонгир (@Silent_trickster)", "role": "Тимлид", "patterns": ["silent_trickster", "silenttrickster", "жахонгир", "жахангир", "jaxa", "жаха", "jakha", "silent"]}
         ]
+
         all_tasks = self.get_tasks_data()
         results = []
 
