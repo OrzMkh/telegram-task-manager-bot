@@ -134,25 +134,55 @@ def parse_sla_deadline(text: str, base_time: datetime = None) -> datetime:
         return base_time + timedelta(days=30)
 
 
-    # 6. Pattern: "до конца дня" / "до вечера" / "до конца смены"
-    if any(w in text_lower for w in ["до конца дня", "до вечера", "до конца смены", "сегодня вечером"]):
-        if base_time.hour < 21:
-            return base_time.replace(hour=21, minute=0, second=0, microsecond=0)
-        return base_time + timedelta(hours=3)
+    # 6. Pattern: "послезавтра"
+    if "послезавтра" in text_lower:
+        m = re.search(r"послезавтра(?:\s+(?:в|к|до)?\s*(\d{1,2})(?:[:\-.](\d{2}))?)?", text_lower)
+        if m and m.group(1):
+            hh = int(m.group(1))
+            mm = int(m.group(2)) if m.group(2) else 0
+            return (base_time + timedelta(days=2)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if any(w in text_lower for w in ["к обеду", "до обеда", "в обед", "на обед", "обеду"]):
+            return (base_time + timedelta(days=2)).replace(hour=13, minute=0, second=0, microsecond=0)
+        if any(w in text_lower for w in ["к утру", "с утра", "утром", "до утра"]):
+            return (base_time + timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
+        return (base_time + timedelta(days=2)).replace(hour=18, minute=0, second=0, microsecond=0)
 
-    # 7. Pattern: "до послезавтра"
-    after_tomorrow_match = re.search(r"до послезавтра(?:\s+(?:в|до)?\s*(\d{1,2})(?:[:\-.](\d{2}))?)?", text_lower)
-    if after_tomorrow_match:
-        hh = int(after_tomorrow_match.group(1)) if after_tomorrow_match.group(1) else 18
-        mm = int(after_tomorrow_match.group(2)) if after_tomorrow_match.group(2) else 0
-        return (base_time + timedelta(days=2)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+    # 7. Pattern: "завтра"
+    if "завтра" in text_lower:
+        m = re.search(r"завтра(?:\s+(?:в|к|до)?\s*(\d{1,2})(?:[:\-.](\d{2}))?)?", text_lower)
+        if m and m.group(1):
+            hh = int(m.group(1))
+            mm = int(m.group(2)) if m.group(2) else 0
+            return (base_time + timedelta(days=1)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if any(w in text_lower for w in ["к обеду", "до обеда", "в обед", "на обед", "обеду"]):
+            return (base_time + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
+        if any(w in text_lower for w in ["к утру", "с утра", "утром", "до утра"]):
+            return (base_time + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        if "после обеда" in text_lower:
+            return (base_time + timedelta(days=1)).replace(hour=15, minute=0, second=0, microsecond=0)
+        if any(w in text_lower for w in ["к вечеру", "вечером", "до вечера"]):
+            return (base_time + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
+        if any(w in text_lower for w in ["до конца дня", "к концу дня"]):
+            return (base_time + timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        return (base_time + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
 
-    # 8. Pattern: "до завтра"
-    tomorrow_match = re.search(r"до завтра(?:\s+(?:в|до)?\s*(\d{1,2})(?:[:\-.](\d{2}))?)?", text_lower)
-    if tomorrow_match:
-        hh = int(tomorrow_match.group(1)) if tomorrow_match.group(1) else 18
-        mm = int(tomorrow_match.group(2)) if tomorrow_match.group(2) else 0
-        return (base_time + timedelta(days=1)).replace(hour=hh, minute=mm, second=0, microsecond=0)
+    # 8. Standalone time of day (Today or Tomorrow)
+    if any(w in text_lower for w in ["к обеду", "до обеда", "в обед", "на обед"]):
+        target = base_time.replace(hour=13, minute=0, second=0, microsecond=0)
+        return target if target > base_time else target + timedelta(days=1)
+
+    if any(w in text_lower for w in ["к утру", "с утра", "утром", "до утра"]):
+        target = base_time.replace(hour=10, minute=0, second=0, microsecond=0)
+        return target if target > base_time else target + timedelta(days=1)
+
+    if "после обеда" in text_lower:
+        target = base_time.replace(hour=15, minute=0, second=0, microsecond=0)
+        return target if target > base_time else target + timedelta(days=1)
+
+    if any(w in text_lower for w in ["до конца дня", "до вечера", "к вечеру", "вечером", "до конца смены", "сегодня вечером"]):
+        target = base_time.replace(hour=21, minute=0, second=0, microsecond=0)
+        return target if target > base_time else base_time + timedelta(hours=3)
+
 
     # 9. Pattern: Specific month name date (e.g. "до 15 августа 18:00", "до 25 мая")
     date_named_match = re.search(r"до\s+(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+(?:в|до)?\s*(\d{1,2})[:\-.](\d{2}))?", text_lower)
