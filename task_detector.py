@@ -117,9 +117,22 @@ def parse_sla_deadline(text: str, base_time: datetime = None) -> datetime:
     if any(w in text_lower for w in ["срочно", "asap", "быстро"]):
         return base_time + timedelta(hours=2)
 
-    # 5. Pattern: "через неделю"
-    if "через неделю" in text_lower or "в течение недели" in text_lower:
+    # 5. Pattern: Weeks (e.g. "через неделю", "через 2 недели", "на неделю", "в течение недели")
+    weeks_match = re.search(r"(?:в течение|через|\b)(\d+)\s*(?:недель|недели|неделю|нед)\b", text_lower)
+    if weeks_match:
+        weeks = int(weeks_match.group(1))
+        return base_time + timedelta(days=7 * weeks)
+    if any(w in text_lower for w in ["через неделю", "в течение недели", "на неделю", "неделю"]):
         return base_time + timedelta(days=7)
+
+    # 5b. Pattern: Months (e.g. "через месяц", "через 2 месяца")
+    months_match = re.search(r"(?:в течение|через|\b)(\d+)\s*(?:месяцев|месяца|месяц)\b", text_lower)
+    if months_match:
+        months_cnt = int(months_match.group(1))
+        return base_time + timedelta(days=30 * months_cnt)
+    if "через месяц" in text_lower or "в течение месяца" in text_lower:
+        return base_time + timedelta(days=30)
+
 
     # 6. Pattern: "до конца дня" / "до вечера" / "до конца смены"
     if any(w in text_lower for w in ["до конца дня", "до вечера", "до конца смены", "сегодня вечером"]):
