@@ -14,3 +14,11 @@ CREDENTIALS_FILE = os.getenv("CREDENTIALS_FILE", "credentials.json")
 # Database & System Settings
 DB_PATH = os.getenv("DB_PATH", "tasks.db")
 SLA_CHECK_INTERVAL = int(os.getenv("SLA_CHECK_INTERVAL", "30"))
+
+# Timezone (Tashkent UTC+5)
+from datetime import datetime, timedelta, timezone
+TIMEZONE_OFFSET = timezone(timedelta(hours=5))
+
+def get_now() -> datetime:
+    return datetime.now(TIMEZONE_OFFSET).replace(tzinfo=None)
+

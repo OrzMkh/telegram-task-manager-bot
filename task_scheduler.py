@@ -5,7 +5,7 @@ from telegram.ext import Application
 
 from task_database import get_all_tasks, mark_reminder_sent, update_task_status
 from task_sheets_sync import SheetsSyncManager
-from config import TARGET_CHAT_ID, DB_PATH, SLA_CHECK_INTERVAL
+from config import TARGET_CHAT_ID, DB_PATH, SLA_CHECK_INTERVAL, get_now
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +13,9 @@ async def check_sla_loop(app: Application, db_path: str = DB_PATH, sheets_sync: 
     logger.info("Started SLA background monitoring loop.")
     while True:
         try:
-            now = datetime.now()
-            active_tasks = get_all_tasks(db_path=db_path, status="Active")
+            now = get_now()
+            active_tasks = get_all_tasks(db_path=db_path, status="Active", sheets_sync=sheets_sync)
+
 
             for task in active_tasks:
                 task_id = task["id"]

@@ -13,7 +13,7 @@ from task_detector import (
     parse_sla_deadline,
     clean_task_text
 )
-from config import DB_PATH
+from config import DB_PATH, get_now
 
 logger = logging.getLogger(__name__)
 
@@ -352,7 +352,7 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
         GLOBAL_PENDING_TASKS[str(sent_msg.message_id)] = task_draft
         return
 
-    now = datetime.now()
+    now = get_now()
     created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
     
     raw_text = message.text or task_text
@@ -604,7 +604,7 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     author = pending.get("author", f"@{user.username}")
     raw_text = pending.get("raw_text", task_text)
 
-    now = datetime.now()
+    now = get_now()
     created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
     sla_dt = parse_sla_deadline(raw_text, base_time=now)
     sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -678,7 +678,7 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
         author = pending.get("author", f"@{update.message.from_user.username}")
         raw_text = pending.get("raw_text", task_text)
 
-        now = datetime.now()
+        now = get_now()
         created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
         sla_dt = parse_sla_deadline(raw_text, base_time=now)
         sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
