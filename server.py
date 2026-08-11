@@ -1056,6 +1056,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     for i, r in enumerate(rows[1:], start=1):
                         if not any(str(cell).strip() for cell in r):
                             continue
+                        if len(r) > id_idx and str(r[id_idx]).strip().startswith("ID"):
+                            continue
+                        if len(r) > ass_idx and str(r[ass_idx]).strip().lower() in ("исполнитель", "assignee"):
+                            continue
+
                         init_rat = r[init_rat_idx] if len(r) > init_rat_idx else "0"
                         disp_val = r[disp_idx] if len(r) > disp_idx else ""
                         final_rat = r[final_rat_idx] if len(r) > final_rat_idx else ""
