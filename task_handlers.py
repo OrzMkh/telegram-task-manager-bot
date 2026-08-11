@@ -89,7 +89,7 @@ async def my_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_tag = " ".join(parts).strip()
         display_name = f"@{user.username}" if user.username else (user.first_name or f"ID:{user.id}")
 
-    user_tasks = get_user_tasks(target_tag, status="Active", db_path=DB_PATH)
+    user_tasks = get_user_tasks(target_tag, status="Active", db_path=DB_PATH, sheets_sync=sheets_sync_instance)
 
     if not user_tasks:
         await update.message.reply_text(
@@ -126,14 +126,15 @@ async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     target_user = context.args[0].strip() if context.args else None
     if target_user:
-        active_tasks = get_user_tasks(target_user, status="Active", db_path=DB_PATH)
+        active_tasks = get_user_tasks(target_user, status="Active", db_path=DB_PATH, sheets_sync=sheets_sync_instance)
         display_user = target_user if target_user.startswith("@") else f"@{target_user}"
         header = f"📋 <b>АКТИВНЫЕ ЗАДАЧИ ({display_user}):</b>\n\n"
         empty_text = f"📌 На данный момент нет активных задач для {display_user}."
     else:
-        active_tasks = get_all_tasks(db_path=DB_PATH, status="Active")
+        active_tasks = get_all_tasks(db_path=DB_PATH, status="Active", sheets_sync=sheets_sync_instance)
         header = "📋 <b>ВСЕ АКТИВНЫЕ ЗАДАЧИ:</b>\n\n"
         empty_text = "📌 На данный момент нет активных задач."
+
 
     if not active_tasks:
         await update.message.reply_text(empty_text, parse_mode="HTML")

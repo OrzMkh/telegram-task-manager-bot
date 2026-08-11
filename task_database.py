@@ -177,30 +177,40 @@ def get_task(task_id: int, db_path="tasks.db") -> dict | None:
         row = cursor.fetchone()
         return dict(row) if row else None
 
-def get_all_tasks(db_path="tasks.db", status: str = None) -> list[dict]:
-    with get_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tasks ORDER BY id DESC")
-        rows = cursor.fetchall()
-        tasks = [dict(r) for r in rows] if rows else []
-        if status:
-            target_st = status.strip().lower()
-            if target_st in ("active", "активные", "активна", "активно"):
-                # Active means anything not completed or deleted (includes Active, Expired, Disputed)
-                return [
-                    t for t in tasks 
-                    if str(t.get("status", "")).strip().lower() not in (
-                        "completed", "done", "deleted", "выполнено", "выполнена", "удалена", "завершена"
-                    )
-                ]
-            else:
-                return [t for t in tasks if str(t.get("status", "")).strip().lower() == target_st]
-        return tasks
+def get_all_tasks(db_path="tasks.db", status: str = None, sheets_sync = None) -> list[dict]:
+    tasks = []
+    if sheets_sync and hasattr(sheets_sync, "get_all_tasks"):
+        try:
+            tasks = sheets_sync.get_all_tasks()
+        except Exception:
+            tasks = []
 
-def get_user_tasks(username_or_query: str, status: str = "Active", db_path="tasks.db") -> list[dict]:
-    all_tasks = get_all_tasks(db_path=db_path, status=status)
+    if not tasks:
+        with get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM tasks ORDER BY id DESC")
+            rows = cursor.fetchall()
+            tasks = [dict(r) for r in rows] if rows else []
+
+    if status:
+        target_st = status.strip().lower()
+        if target_st in ("active", "активные", "активна", "активно", "в работе"):
+            # Active means anything not completed or deleted (includes Active, Expired, Disputed, В работе)
+            return [
+                t for t in tasks 
+                if str(t.get("status", "")).strip().lower() not in (
+                    "completed", "done", "deleted", "выполнено", "выполнена", "удалена", "завершена"
+                )
+            ]
+        else:
+            return [t for t in tasks if str(t.get("status", "")).strip().lower() == target_st]
+    return tasks
+
+def get_user_tasks(username_or_query: str, status: str = "Active", db_path="tasks.db", sheets_sync = None) -> list[dict]:
+    all_tasks = get_all_tasks(db_path=db_path, status=status, sheets_sync=sheets_sync)
     if not username_or_query:
         return all_tasks
+
 
     query_str = (username_or_query or "").lower().strip()
     tokens = [t.replace("@", "").strip() for t in query_str.split() if t.replace("@", "").strip()]

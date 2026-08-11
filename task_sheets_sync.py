@@ -1,5 +1,8 @@
 import os
 import logging
+import time
+import base64
+import json
 from config import SPREADSHEET_ID, CREDENTIALS_FILE
 
 logger = logging.getLogger(__name__)
@@ -16,9 +19,6 @@ HEADERS = [
     "Причина оспаривания",
     "Итоговая оценка не меняется"
 ]
-
-import base64
-import json
 
 B64_CREDS = (
     "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiemlwcHktZm9saW8tNDk0NzExLWgwIiwK"
@@ -123,6 +123,57 @@ class SheetsSyncManager:
         except Exception as e:
             logger.error(f"Failed to initialize Google Sheets client: {e}")
             self.enabled = False
+
+    def get_all_tasks(self) -> list[dict]:
+        if not self.enabled or not self.sheet:
+            return []
+
+        now = time.time()
+        if hasattr(self, "_tasks_cache") and hasattr(self, "_tasks_cache_time"):
+            if now - self._tasks_cache_time < 5 and self._tasks_cache:
+                return self._tasks_cache
+
+        try:
+            rows = self.sheet.get_all_values()
+            if not rows or len(rows) <= 1:
+                return []
+
+            headers = [str(h).strip() for h in rows[0]]
+            id_idx = headers.index("ID Задачи") if "ID Задачи" in headers else 0
+            text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+            ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+            aut_idx = headers.index("Постановщик") if "Постановщик" in headers else 3
+            sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
+            date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
+            stat_idx = headers.index("Статус") if "Статус" in headers else 6
+
+            tasks = []
+            for r in rows[1:]:
+                if not any(str(cell).strip() for cell in r):
+                    continue
+                try:
+                    task_id = int(str(r[id_idx]).replace("#", "").strip()) if len(r) > id_idx else len(tasks) + 1
+                except Exception:
+                    continue
+
+                tasks.append({
+                    "id": task_id,
+                    "task_text": r[text_idx] if len(r) > text_idx else "",
+                    "assignee": r[ass_idx] if len(r) > ass_idx else "",
+                    "author": r[aut_idx] if len(r) > aut_idx else "",
+                    "sla_deadline": r[sla_idx] if len(r) > sla_idx else "",
+                    "created_at": r[date_idx] if len(r) > date_idx else "",
+                    "status": r[stat_idx] if len(r) > stat_idx else "Active",
+                })
+
+            self._tasks_cache = tasks
+            self._tasks_cache_time = now
+            return tasks
+        except Exception as e:
+            logger.error(f"Error fetching tasks from Google Sheet: {e}")
+            if hasattr(self, "_tasks_cache"):
+                return self._tasks_cache
+            return []
 
     def append_task(self, task: dict):
         if not self.enabled or not self.sheet:
