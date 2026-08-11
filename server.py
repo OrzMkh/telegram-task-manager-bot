@@ -1075,10 +1075,15 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         except Exception:
                             final_num = 0
 
-                        is_disputed = bool(disp_val.strip() and not final_rat.strip())
+                        has_final = final_num > 0
+                        has_dispute_flag = bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено", "спор"])
+                        is_disputed = has_dispute_flag and not has_final
+
                         status_val = r[stat_idx] if len(r) > stat_idx else "Active"
                         if is_disputed:
                             status_val = "Disputed"
+                        elif has_final or init_num > 0 or status_val.strip().lower() in ["done", "завершено", "завершена", "выполнено"]:
+                            status_val = "Done"
 
                         tasks.append({
                             "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
