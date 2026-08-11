@@ -114,15 +114,23 @@ class SheetsSyncManager:
 
             # Check if headers exist
             existing_rows = self.sheet.get_all_values()
-            if not existing_rows or existing_rows[0] != HEADERS:
+            if not existing_rows:
                 self.sheet.insert_row(HEADERS, 1)
                 logger.info("Initialized Google Sheet headers.")
+            elif len(existing_rows[0]) < len(HEADERS):
+                for col_idx, header_val in enumerate(HEADERS, start=1):
+                    if col_idx > len(existing_rows[0]) or existing_rows[0][col_idx - 1] != header_val:
+                        try:
+                            self.sheet.update_cell(1, col_idx, header_val)
+                        except Exception:
+                            pass
 
             self.enabled = True
             logger.info("Google Sheets integration successfully enabled.")
         except Exception as e:
             logger.error(f"Failed to initialize Google Sheets client: {e}")
             self.enabled = False
+
 
     def get_all_tasks(self) -> list[dict]:
         if not self.enabled or not self.sheet:
