@@ -130,6 +130,35 @@ def init_db(db_path="tasks.db"):
                 created_at TEXT NOT NULL
             )
         """)
+        # Recurring tasks table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recurring_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                assignee TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT 'Руководитель',
+                frequency TEXT NOT NULL,
+                day_of_week TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Active',
+                last_evaluated_at TEXT,
+                last_rating INTEGER DEFAULT 0,
+                last_rating_comment TEXT,
+                message_link TEXT DEFAULT ''
+            )
+        """)
+        # Recurring task evaluations history
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recurring_task_evaluations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recurring_task_id INTEGER,
+                assignee TEXT NOT NULL,
+                period_month TEXT NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                evaluated_at TEXT NOT NULL
+            )
+        """)
         # Ensure rating and dispute columns exist
         cols_to_check = [
             ("priority", "TEXT DEFAULT 'Medium'"),
@@ -150,6 +179,98 @@ def init_db(db_path="tasks.db"):
                 except Exception:
                     pass
         conn.commit()
+
+def add_recurring_task(title: str, assignee: str, author: str, frequency: str, day_of_week: str, created_at: str, message_link: str = "", db_path="tasks.db") -> dict:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO recurring_tasks (title, assignee, author, frequency, day_of_week, created_at, status, message_link)
+            VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)
+        """, (title, assignee, author, frequency, day_of_week, created_at, message_link))
+        conn.commit()
+        task_id = cursor.lastrowid
+        return {
+            "id": task_id,
+            "title": title,
+            "assignee": assignee,
+            "author": author,
+            "frequency": frequency,
+            "day_of_week": day_of_week,
+            "created_at": created_at,
+            "status": "Active",
+            "message_link": message_link,
+            "last_rating": 0
+        }
+
+def get_all_recurring_tasks(db_path="tasks.db", status: str = "Active") -> list[dict]:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        if status:
+            cursor.execute("SELECT * FROM recurring_tasks WHERE status = ? ORDER BY id DESC", (status,))
+        else:
+            cursor.execute("SELECT * FROM recurring_tasks ORDER BY id DESC")
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows] if rows else []
+
+def get_recurring_task(task_id: int, db_path="tasks.db") -> dict | None:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM recurring_tasks WHERE id = ?", (task_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def delete_recurring_task(task_id: int, db_path="tasks.db") -> bool:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE recurring_tasks SET status = 'Deleted' WHERE id = ?", (task_id,))
+        conn.commit()
+        return True
+
+def rate_recurring_task(task_id: int, rating: int, comment: str = "", evaluated_at: str = "", db_path="tasks.db") -> dict | None:
+    if not evaluated_at:
+        from config import get_now
+        evaluated_at = get_now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    period_month = evaluated_at[:7] # e.g. '2026-08'
+
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM recurring_tasks WHERE id = ?", (task_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        task = dict(row)
+        assignee = task.get("assignee", "")
+
+        # Update current task state
+        cursor.execute("""
+            UPDATE recurring_tasks 
+            SET last_rating = ?, last_rating_comment = ?, last_evaluated_at = ?
+            WHERE id = ?
+        """, (rating, comment, evaluated_at, task_id))
+
+        # Insert into evaluations history
+        cursor.execute("""
+            INSERT INTO recurring_task_evaluations (recurring_task_id, assignee, period_month, rating, comment, evaluated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (task_id, assignee, period_month, rating, comment, evaluated_at))
+        conn.commit()
+
+        task["last_rating"] = rating
+        task["last_rating_comment"] = comment
+        task["last_evaluated_at"] = evaluated_at
+        return task
+
+def get_recurring_evaluations(month: str = None, db_path="tasks.db") -> list[dict]:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        if month:
+            cursor.execute("SELECT * FROM recurring_task_evaluations WHERE period_month = ? ORDER BY id DESC", (month,))
+        else:
+            cursor.execute("SELECT * FROM recurring_task_evaluations ORDER BY id DESC")
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows] if rows else []
+
 
 def add_task(task_text: str, assignee: str, author: str, sla_deadline: str, created_at: str, message_link: str = "", db_path="tasks.db") -> dict:
     with get_connection(db_path) as conn:

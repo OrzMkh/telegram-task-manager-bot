@@ -1,4 +1,4 @@
-﻿# === Python ===
+# === Python ===
 __pycache__/
 *.py[cod]
 *.pyc
@@ -16,8 +16,10 @@ env/
 # === Environment & Secrets ===
 .env
 credentials.json
+credentials*.json
 service_account.json
 *_credentials.json
+
 token.json
 *.pem
 *.key

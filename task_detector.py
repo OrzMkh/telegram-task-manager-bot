@@ -17,12 +17,37 @@ def is_authorized_author(user) -> bool:
     return username == "orzmkh"
 
 
+def is_recurring_task_message(text: str) -> bool:
+    """
+    Check if message starts with 'ЗП', 'зп', 'ZP', or 'zp' for Recurring Tasks.
+    """
+    if not text:
+        return False
+    text_stripped = text.strip()
+    return bool(re.match(r"^[зzЗZ][пpПP](?:[\s:.,\-—]|(?=@)|$)", text_stripped))
+
+
+def clean_recurring_task_text(text: str) -> str:
+    """
+    Cleans recurring task text by stripping leading 'ЗП'/'ZP' prefix.
+    """
+    cleaned = text.strip()
+    trigger_prefix = re.match(r"^[зzЗZ][пpПP][\s:.,\-—]*", cleaned)
+    if trigger_prefix:
+        cleaned = cleaned[len(trigger_prefix.group(0)):].strip()
+    return cleaned if cleaned else text
+
+
 def is_task_message(text: str, user=None, has_explicit_command: bool = False) -> bool:
     """
     Rule 1: If message starts with 'З', 'Т', 'Z', or 'T' (case-insensitive) ONLY at the beginning,
     or explicit command /task, /задача, #task, create a task.
+    Note: 'ЗП' / 'ZP' messages are handled separately as recurring tasks.
     """
     if not text:
+        return False
+
+    if is_recurring_task_message(text):
         return False
 
     if has_explicit_command:
@@ -42,6 +67,7 @@ def is_task_message(text: str, user=None, has_explicit_command: bool = False) ->
         return True
 
     return False
+
 
 
 def extract_assignee(message) -> str:

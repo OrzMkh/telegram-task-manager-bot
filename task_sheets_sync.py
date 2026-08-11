@@ -341,3 +341,84 @@ class SheetsSyncManager:
         except Exception as e:
             logger.error(f"Error appending bike report #{report.get('id')} to Google Sheets: {e}")
 
+    def append_recurring_task(self, task: dict):
+        if not self.enabled or not self.client:
+            return
+        try:
+            spreadsheet = self.client.open_by_key(self.spreadsheet_id)
+            try:
+                sheet = spreadsheet.worksheet("Постоянные задачи")
+            except Exception:
+                sheet = spreadsheet.add_worksheet(title="Постоянные задачи", rows=500, cols=12)
+                headers = [
+                    "ID Задачи", "Название задачи", "Исполнитель", "Постановщик",
+                    "Частота", "День недели", "Дата создания", "Последняя оценка",
+                    "Комментарий к оценке", "Статус", "Ссылка на сообщение"
+                ]
+                sheet.insert_row(headers, 1)
+
+            existing = sheet.get_all_values()
+            if not existing:
+                headers = [
+                    "ID Задачи", "Название задачи", "Исполнитель", "Постановщик",
+                    "Частота", "День недели", "Дата создания", "Последняя оценка",
+                    "Комментарий к оценке", "Статус", "Ссылка на сообщение"
+                ]
+                sheet.insert_row(headers, 1)
+
+            row = [
+                task.get("id", ""),
+                task.get("title", ""),
+                task.get("assignee", ""),
+                task.get("author", "Руководитель"),
+                task.get("frequency", ""),
+                task.get("day_of_week", ""),
+                task.get("created_at", ""),
+                task.get("last_rating", 0),
+                task.get("last_rating_comment", ""),
+                task.get("status", "Active"),
+                task.get("message_link", "")
+            ]
+            sheet.append_row(row)
+            logger.info(f"Recurring task #{task.get('id')} appended to Google Sheets ('Постоянные задачи').")
+        except Exception as e:
+            logger.error(f"Error appending recurring task #{task.get('id')} to Google Sheets: {e}")
+
+    def get_all_recurring_tasks(self) -> list[dict]:
+        if not self.enabled or not self.client:
+            return []
+        try:
+            spreadsheet = self.client.open_by_key(self.spreadsheet_id)
+            try:
+                sheet = spreadsheet.worksheet("Постоянные задачи")
+            except Exception:
+                return []
+            rows = sheet.get_all_values()
+            if not rows or len(rows) <= 1:
+                return []
+            headers = [str(h).strip() for h in rows[0]]
+            tasks = []
+            for r in rows[1:]:
+                if not any(str(cell).strip() for cell in r):
+                    continue
+                if str(r[0]).strip().startswith("ID"):
+                    continue
+                tasks.append({
+                    "id": r[0] if len(r) > 0 else "",
+                    "title": r[1] if len(r) > 1 else "",
+                    "assignee": r[2] if len(r) > 2 else "",
+                    "author": r[3] if len(r) > 3 else "",
+                    "frequency": r[4] if len(r) > 4 else "",
+                    "day_of_week": r[5] if len(r) > 5 else "",
+                    "created_at": r[6] if len(r) > 6 else "",
+                    "last_rating": int(r[7]) if len(r) > 7 and str(r[7]).isdigit() else 0,
+                    "last_rating_comment": r[8] if len(r) > 8 else "",
+                    "status": r[9] if len(r) > 9 else "Active",
+                    "message_link": r[10] if len(r) > 10 else ""
+                })
+            return tasks
+        except Exception as e:
+            logger.error(f"Failed to fetch recurring tasks from Google Sheets: {e}")
+            return []
+
+

@@ -3,10 +3,15 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
-from task_database import add_task, get_all_tasks, get_user_tasks, get_task, update_task_status, delete_task
+from task_database import (
+    add_task, get_all_tasks, get_user_tasks, get_task, update_task_status, delete_task,
+    add_recurring_task, get_all_recurring_tasks, get_recurring_task, delete_recurring_task
+)
 from task_sheets_sync import SheetsSyncManager
 from task_detector import (
     is_task_message,
+    is_recurring_task_message,
+    clean_recurring_task_text,
     is_authorized_author,
     extract_assignee,
     extract_author,
@@ -18,6 +23,9 @@ from config import DB_PATH, get_now
 logger = logging.getLogger(__name__)
 
 sheets_sync_instance: SheetsSyncManager | None = None
+GLOBAL_PENDING_TASKS = {}
+GLOBAL_RECURRING_DRAFTS = {}
+
 
 def set_sheets_sync(manager: SheetsSyncManager):
     global sheets_sync_instance
@@ -289,9 +297,15 @@ async def message_auto_detector_handler(update: Update, context: ContextTypes.DE
     if text_stripped.startswith("/") and not any(text_stripped.startswith(cmd) for cmd in ["/task", "/задача", "/add", "/newtask"]):
         return
 
+    if is_recurring_task_message(text_stripped):
+        clean_title = clean_recurring_task_text(text_stripped)
+        await _process_and_create_recurring_task(update, clean_title, context=context)
+        return
+
     if is_task_message(text_stripped, user=user):
         task_text = clean_task_text(text_stripped)
         await _process_and_create_task(update, task_text, context=context)
+
 
 
 async def _process_and_create_task(update: Update, task_text: str, context: ContextTypes.DEFAULT_TYPE = None, override_assignee: str = ""):
@@ -759,3 +773,259 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
         f"💬 <i>«{reason_text}»</i>",
         parse_mode="HTML"
     )
+
+
+# ==========================================
+# RECURRING TASKS (ПОСТОЯННЫЕ ЗАДАЧИ - ЗП/ZP)
+# ==========================================
+
+async def _process_and_create_recurring_task(update: Update, title: str, context: ContextTypes.DEFAULT_TYPE = None):
+    message = update.message
+    if not message:
+        return
+
+    author = extract_author(message)
+    assignee = extract_assignee(message)
+    draft_id = str(message.message_id)
+
+    target_msg = message.reply_to_message or message
+    target_msg_id = target_msg.message_id
+    if message.chat.username:
+        msg_link = f"https://t.me/{message.chat.username}/{target_msg_id}"
+    else:
+        clean_cid = str(message.chat_id).replace("-100", "").replace("-", "")
+        msg_link = f"https://t.me/c/{clean_cid}/{target_msg_id}"
+
+    draft = {
+        "title": title,
+        "author": author,
+        "assignee": assignee,
+        "frequency": "",
+        "day_of_week": "",
+        "message_link": msg_link,
+        "chat_id": message.chat_id,
+        "message_id": target_msg_id
+    }
+    GLOBAL_RECURRING_DRAFTS[draft_id] = draft
+
+    # Step 1: If assignee not known, prompt for assignee
+    if not assignee:
+        assign_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👤 Ильясбек (@isslamov)", callback_data=f"recasgn_isslamov_{draft_id}")],
+            [InlineKeyboardButton("👤 Мужахид (@axi0603)", callback_data=f"recasgn_axi0603_{draft_id}")],
+            [InlineKeyboardButton("👤 Жахангир (@Silent_trickster)", callback_data=f"recasgn_jahangir_{draft_id}")],
+            [InlineKeyboardButton("👥 Вся команда", callback_data=f"recasgn_team_{draft_id}")],
+        ])
+        sent_msg = await message.reply_text(
+            f"🔄 <b>ПОСТОЯННАЯ ЗАДАЧА (Шаг 1 из 3)</b>\n\n"
+            f"📋 <b>Задача:</b> {title}\n\n"
+            f"👤 <b>Выберите исполнителя:</b>",
+            parse_mode="HTML",
+            reply_markup=assign_keyboard,
+            reply_to_message_id=message.message_id
+        )
+        GLOBAL_RECURRING_DRAFTS[str(sent_msg.message_id)] = draft
+        return
+
+    # If assignee was specified in text via @mention, go straight to Step 2 (Frequency)
+    await _send_recurring_frequency_step(message, draft, draft_id, is_edit=False)
+
+
+async def _send_recurring_frequency_step(message_or_query, draft: dict, draft_id: str, is_edit: bool = False):
+    freq_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📅 Раз в неделю", callback_data=f"recfreq_weekly_{draft_id}")],
+        [InlineKeyboardButton("🗓 Раз в 2 недели", callback_data=f"recfreq_biweekly_{draft_id}")],
+        [InlineKeyboardButton("📆 Раз в месяц", callback_data=f"recfreq_monthly_{draft_id}")],
+        [InlineKeyboardButton("⚡️ Каждый рабочий день", callback_data=f"recfreq_daily_{draft_id}")],
+    ])
+    text = (
+        f"🔄 <b>ПОСТОЯННАЯ ЗАДАЧА (Шаг 2 из 3)</b>\n\n"
+        f"📋 <b>Задача:</b> {draft['title']}\n"
+        f"👤 <b>Исполнитель:</b> {draft['assignee']}\n\n"
+        f"🔄 <b>Как часто необходимо выполнять задачу?</b>"
+    )
+    if is_edit:
+        await message_or_query.edit_message_text(text, parse_mode="HTML", reply_markup=freq_keyboard)
+    else:
+        sent_msg = await message_or_query.reply_text(text, parse_mode="HTML", reply_markup=freq_keyboard, reply_to_message_id=draft.get("message_id"))
+        GLOBAL_RECURRING_DRAFTS[str(sent_msg.message_id)] = draft
+
+
+async def _send_recurring_day_step(query, draft: dict, draft_id: str):
+    freq_labels = {
+        "weekly": "Раз в неделю",
+        "biweekly": "Раз в 2 недели",
+        "monthly": "Раз в месяц",
+        "daily": "Каждый рабочий день"
+    }
+    freq_text = freq_labels.get(draft.get("frequency"), "Периодически")
+
+    if draft.get("frequency") == "daily":
+        draft["day_of_week"] = "Пн-Пт"
+        await _finish_recurring_task_creation(query, draft, draft_id)
+        return
+
+    days_keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Пн (Понедельник)", callback_data=f"recday_Пн_{draft_id}"),
+            InlineKeyboardButton("Вт (Вторник)", callback_data=f"recday_Вт_{draft_id}"),
+        ],
+        [
+            InlineKeyboardButton("Ср (Среда)", callback_data=f"recday_Ср_{draft_id}"),
+            InlineKeyboardButton("Чт (Четверг)", callback_data=f"recday_Чт_{draft_id}"),
+        ],
+        [
+            InlineKeyboardButton("Пт (Пятница)", callback_data=f"recday_Пт_{draft_id}"),
+            InlineKeyboardButton("Сб (Суббота)", callback_data=f"recday_Сб_{draft_id}"),
+        ],
+        [
+            InlineKeyboardButton("Вс (Воскресенье)", callback_data=f"recday_Вс_{draft_id}"),
+        ]
+    ])
+
+    text = (
+        f"🔄 <b>ПОСТОЯННАЯ ЗАДАЧА (Шаг 3 из 3)</b>\n\n"
+        f"📋 <b>Задача:</b> {draft['title']}\n"
+        f"👤 <b>Исполнитель:</b> {draft['assignee']}\n"
+        f"🔄 <b>Частота:</b> {freq_text}\n\n"
+        f"📅 <b>В какой день недели выполнять задачу?</b>"
+    )
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=days_keyboard)
+
+
+async def _finish_recurring_task_creation(query, draft: dict, draft_id: str):
+    from config import get_now
+    created_at_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
+
+    freq_labels = {
+        "weekly": "Раз в неделю",
+        "biweekly": "Раз в 2 недели",
+        "monthly": "Раз в месяц",
+        "daily": "Каждый рабочий день"
+    }
+    freq_text = freq_labels.get(draft.get("frequency"), draft.get("frequency", "Периодически"))
+    day_str = draft.get("day_of_week", "Пн")
+
+    # Save to SQLite DB
+    task_dict = add_recurring_task(
+        title=draft["title"],
+        assignee=draft["assignee"],
+        author=draft["author"],
+        frequency=freq_text,
+        day_of_week=day_str,
+        created_at=created_at_str,
+        message_link=draft.get("message_link", ""),
+        db_path=DB_PATH
+    )
+
+    task_id = task_dict.get("id")
+
+    # Sync to Google Sheets
+    if sheets_sync_instance and hasattr(sheets_sync_instance, "append_recurring_task"):
+        try:
+            sheets_sync_instance.append_recurring_task(task_dict)
+        except Exception as e:
+            logger.error(f"Error syncing recurring task #{task_id} to Google Sheets: {e}")
+
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delrec_{task_id}")]
+    ])
+
+    link_str = f"\n🔗 <a href='{draft['message_link']}'>Ссылка на исходное сообщение</a>" if draft.get("message_link") else ""
+
+    confirm_text = (
+        f"✅ <b>ПОСТОЯННАЯ ЗАДАЧА #{task_id} СОЗДАНА</b>\n\n"
+        f"📋 <b>Задача:</b> {draft['title']}\n"
+        f"👤 <b>Исполнитель:</b> {draft['assignee']}\n"
+        f"✍️ <b>Постановщик:</b> {draft['author']}\n"
+        f"🔄 <b>Периодичность:</b> {freq_text}\n"
+        f"📅 <b>День выполнения:</b> {day_str}{link_str}\n"
+        f"📊 <b>Статус:</b> Занесена в систему и открыта для оценки в Web App\n\n"
+        f"🌐 <i>Оценивать выполнение этой задачи можно в дашборде в разделе «Постоянные задачи»</i>"
+    )
+
+    await query.edit_message_text(confirm_text, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=True)
+
+
+async def recurring_task_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    user = query.from_user
+
+    # Delete recurring task handler
+    if data.startswith("delrec_"):
+        if not is_authorized_author(user):
+            await query.answer("⛔ Только руководитель может удалять задачи!", show_alert=True)
+            return
+        rec_id_str = data.replace("delrec_", "").strip()
+        try:
+            clean_rec_id = int(rec_id_str)
+            delete_recurring_task(clean_rec_id, db_path=DB_PATH)
+            await query.answer(f"Постоянная задача #{clean_rec_id} удалена.")
+            await query.edit_message_text(f"🗑 <b>Постоянная задача #{clean_rec_id} удалена из системы.</b>", parse_mode="HTML")
+        except Exception as e:
+            logger.error(f"Error deleting recurring task: {e}")
+            await query.answer("Ошибка при удалении задачи.", show_alert=True)
+        return
+
+    if not is_authorized_author(user):
+        await query.answer("⛔ Только руководитель может настраивать постоянные задачи!", show_alert=True)
+        return
+
+    parts = data.split("_")
+    prefix = parts[0]
+    val = parts[1] if len(parts) >= 2 else ""
+    draft_id = parts[2] if len(parts) >= 3 else ""
+
+    # Find draft
+    draft = GLOBAL_RECURRING_DRAFTS.get(draft_id) or (GLOBAL_RECURRING_DRAFTS.get(str(query.message.message_id)) if query.message else None)
+
+    if not draft and query.message:
+        # Fallback extract title
+        msg_txt = query.message.text or ""
+        if "Задача:" in msg_txt:
+            try:
+                line = [l for l in msg_txt.split("\n") if "Задача:" in l][0]
+                t_val = line.split("Задача:")[1].strip()
+                draft = {
+                    "title": t_val,
+                    "author": f"@{user.username}" if user.username else "@orzmkh",
+                    "assignee": "",
+                    "frequency": "",
+                    "day_of_week": "",
+                    "message_link": ""
+                }
+            except Exception:
+                pass
+
+    if not draft:
+        await query.answer("⚠️ Сессия настройки истекла. Поставьте задачу снова через 'ЗП'.", show_alert=True)
+        return
+
+    # 1. Step 1 -> Assignee chosen
+    if prefix == "recasgn":
+        assignee_map = {
+            "isslamov": "@isslamov",
+            "axi0603": "@axi0603",
+            "jahangir": "@Silent_trickster",
+            "team": "Команда",
+        }
+        draft["assignee"] = assignee_map.get(val, "Команда")
+        await query.answer(f"Исполнитель: {draft['assignee']}")
+        await _send_recurring_frequency_step(query, draft, draft_id, is_edit=True)
+
+    # 2. Step 2 -> Frequency chosen
+    elif prefix == "recfreq":
+        draft["frequency"] = val
+        await query.answer(f"Частота: {val}")
+        await _send_recurring_day_step(query, draft, draft_id)
+
+    # 3. Step 3 -> Day of week chosen
+    elif prefix == "recday":
+        draft["day_of_week"] = val
+        await query.answer(f"День: {val}")
+        await _finish_recurring_task_creation(query, draft, draft_id)
+
