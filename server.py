@@ -1285,50 +1285,74 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         prev_init_rating = 0
         was_disputed = False
 
+        # 1. Update SQLite
         try:
-            client = get_google_sheets_client()
-            if client:
-                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
-                sheet = spreadsheet.sheet1
-                headers = [str(h).strip() for h in sheet.row_values(1)]
-                id_col_vals = sheet.col_values(1)
-                target_row = None
-                str_id = str(task_id).strip()
-                for idx, val in enumerate(id_col_vals):
-                    if str(val).strip() == str_id:
-                        target_row = idx + 1
+            if os.path.exists(TASKS_DB_PATH):
+                with sqlite3.connect(TASKS_DB_PATH) as conn:
+                    c = conn.cursor()
+                    clean_id = int(str(task_id).replace("#", "").strip())
+                    c.execute("UPDATE tasks SET status = 'Done', is_disputed = 0, final_rating = ?, rating = ? WHERE id = ?", (rating, rating, clean_id))
+                    conn.commit()
+        except Exception as e_sql:
+            logger.error(f"Failed to update task rating in sqlite: {e_sql}")
+
+        # 2. Update Google Sheets with retry
+        for attempt in range(3):
+            try:
+                client = get_google_sheets_client()
+                if client:
+                    spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                    sheet = spreadsheet.sheet1
+                    rows = sheet.get_all_values()
+                    if not rows:
                         break
-                if target_row:
-                    row_vals = sheet.row_values(target_row)
-                    text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
-                    ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
-                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
-                    disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
+                    headers = [str(h).strip() for h in rows[0]]
+                    str_id = str(task_id).replace("#", "").strip()
+                    target_row = None
+                    for idx, r in enumerate(rows):
+                        if idx == 0:
+                            continue
+                        if len(r) > 0 and str(r[0]).replace("#", "").strip() == str_id:
+                            target_row = idx + 1
+                            break
+                    if target_row:
+                        row_vals = rows[target_row - 1]
+                        text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+                        ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+                        init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
+                        disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
 
-                    task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
-                    assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
-                    raw_init = row_vals[init_rat_idx] if len(row_vals) > init_rat_idx else "0"
-                    raw_disp = row_vals[disp_idx] if len(row_vals) > disp_idx else ""
+                        task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
+                        assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
+                        raw_init = row_vals[init_rat_idx] if len(row_vals) > init_rat_idx else "0"
+                        raw_disp = row_vals[disp_idx] if len(row_vals) > disp_idx else ""
 
-                    try:
-                        prev_init_rating = int(str(raw_init).replace("/5", "").strip())
-                    except Exception:
-                        prev_init_rating = 0
+                        try:
+                            prev_init_rating = int(str(raw_init).replace("/5", "").strip())
+                        except Exception:
+                            prev_init_rating = 0
 
-                    if raw_disp.strip():
-                        was_disputed = True
+                        if raw_disp.strip():
+                            was_disputed = True
 
-                    init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
-                    final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
+                        stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
+                        init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
+                        final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
 
-                    if not raw_init.strip() or raw_init.strip() == "0":
-                        sheet.update_cell(target_row, init_col, f"{rating}/5")
-                        prev_init_rating = rating
-                    sheet.update_cell(target_row, final_col, f"{rating}/5")
+                        sheet.update_cell(target_row, stat_col, "Done")
+                        if not raw_init.strip() or raw_init.strip() == "0":
+                            sheet.update_cell(target_row, init_col, f"{rating}/5")
+                            prev_init_rating = rating
+                        sheet.update_cell(target_row, final_col, f"{rating}/5")
 
-                TASKS_SHEETS_CACHE["timestamp"] = 0
-        except Exception as e:
-            logger.error(f"Failed to update task rating in Google Sheets: {e}")
+                    TASKS_SHEETS_CACHE["timestamp"] = 0
+                    break
+            except Exception as e:
+                logger.error(f"Attempt {attempt+1}: Failed to update task rating in Google Sheets: {e}")
+                if "429" in str(e) or "Quota" in str(e):
+                    time.sleep(2 * (attempt + 1))
+                else:
+                    break
 
         # Send Telegram notification
         try:
