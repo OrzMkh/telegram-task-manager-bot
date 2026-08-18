@@ -20,41 +20,7 @@ HEADERS = [
     "Итоговая оценка не меняется"
 ]
 
-B64_CREDS = (
-    "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiemlwcHktZm9saW8tNDk0NzExLWgwIiwK"
-    "ICAicHJpdmF0ZV9rZXlfaWQiOiAiODFlMDFjOWZkZjRmYjJiNmVjNWJiZjA3MDlmOWZlZDVmOWU5OTQxNCIsCiAgInByaXZh"
-    "dGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NC"
-    "S2N3Z2dTakFnRUFBb0lCQVFENVN4L1VrSHQrSXpRSlxudXJZTWMvUnBHRGRiUjhNTTMrYUZxZzZ6ZTYwUzc3eE8yT0Z6RytQ"
-    "L1VrVHpTSUFRSmdCQkN0SjZvZHF3WlFvVFxuK3JVZkpkN0djZVlkLzRLdGtOZ0RPZTkrM01jM0xOeFduV3pRSkFYZ0x3SXgz"
-    "VTZYYmRxWk9qNWJWckFndnNlaFxucVBvd2Y1UVM1ZW5md2szL2VqY0RwMzBuV0hMVHlnODN6YlVpaDczN21sZTJSUlducFBh"
-    "Zm44em5JVXRsUGxSYVxuc1V1ai8rVGpScy9jL0tKR3ArV0xOdmpsU1dad0dsV2NLV1BFbUI3QmhkKzZNUEp1Z244d0VXK255"
-    "L2g0NmlCWlxuM2lQemJZTVUwYThydFpYMCtLaDNlbVVqRTB6Slh6RG9RWDR1dHhhc3Eyend2T05qSTlTVjhHNHJCNzRlY3ht"
-    "SlxuZkRVejMrSjdBZ01CQUFFQ2dnRUFkOXlKaU9RUkpHUmJ0R1BiL1IvUmY2aGZrVmx2TEdVSkN2SnBrQjJpYVN6d1xuWHY3"
-    "RFkxdWhJNVZVUnA3d3lCTGxZMkNITStSWGFDR2tsMWVmNjBNM21qV1FYWk1KSzFldHJOdHh6ZzdzRUJqWFxuTmlRSitnZWY5"
-    "WnJVbE5JaDVBZ3pKeUpNY2hFN3JQcmR0Rm94TlJsYVFqM2VWYkl3VzJwUlFrWUpGRjVnRTNpc1xuS3lMcjZVNlA1TjVIS3dz"
-    "S096R1JCU3NWMzZuZ2ZyQWtGVzhRNzh2WkIzYjkwa0hBdjF0dFV2ODh2d25BajFOQVxuWWdLRmNPKytWKzliUkRhN2dabks0"
-    "RlFxRkVad1Z0bzI2Z3FXWkI5NHdMVUh4SFlTUkhHMVBwOUJpQVp5WFZ5VFxudGVRNXVYaTJhalh0d3I0Q29zMEIxM3MzbTZv"
-    "T3hPV2V1Z2FzK1BCSERRS0JnUUQ5YllTNlF2aHZsUUFIVlVFZ1xuMXRHSng1a1BDbGxhZGJyVi9MR1BwWDc1YWJRWG4yVDdp"
-    "RVZTNFVjMkhMZVJPbHgwbmFXcDUvMmp1N1J4NDRkWFxudFZLOHYxaXozZDA2RzZSc29oeVpoWU5hWUkvU0djQWpxSDBYeWJN"
-    "L1QyVklhcXI2djRPZ1dQczBpcldJaGVqbVxuaDEwaEExNUgvRXFkVytwVUpCL0YrNEZ4UHdLQmdRRDcwdDBUdHloeGN4RnVp"
-    "NzFFMFZDaWdMYkE5YlpmQWI5YVxuNnBKMHJTTDcreHM5NUJ0ZzJZSzJDSkZRYnBzQ0tDZkgvRTB0REUyNmJtWjNucHozSFMr"
-    "VHNUZEIrVkU1bzhZNFxueXBhTU1Ndi9wcFR5V1FMTkNlWit6b24veUZ6aGZXc1Nla0xjS09IZ24wWlJtaVJEd3JZczd0M0Mx"
-    "TzZERFVRdFxuUTN6WnJ4QUR4UUtCZ1FDNkwzL1hwK1FGZGg0elJQczRPUnB3Y3VlTUdUcFVMekk0akJHWFN5cmg2anFaTUUx"
-    "c1xuVGswLytxbnFvMlpwbDhyZEVnVG5zcnl4VWZIYnlpRmcycUlTY1RHbDAxWDRudDVKd1QvcHVpRXFnTTZvdUtwa1xuaUNCL0"
-    "hYeEhBdm1TSG12SEZIU0xsVlBZNGg5RVViMHR3RDAzUjlZNFpLNGN0YTZPYW91OVZHMWcyUUtCZ0U3aFxueVpDd2NnRy9xcmsz"
-    "R3EyZzU2SlBzVytXU0c5UVM5Rzk0dXliZzNidFBLWlJldVlHbkhSTEVNSGlNN29rTy9uZ1xuSllpejd2RTBQZkxBZzZqQXdy"
-    "Ti84ckErMmR1MVdwVlZtSDBIbUE5WDdoWlFIWmwrdlc0QllxYjE2MnBTOENSVVxubWZiKzgycDZXZnViempwUGx1TlNXN0w1"
-    "SWxGNDZWOUlZYWFLdVBpRkFvR0FZYWdlZlVCYmJLczVmOHhtakhIVFxub3BycTZjYWowNGNnMGtkVmdHOW1ocUtQcFA0YXV3"
-    "MDZHWkdxR0xtVDlHaFJwdlArTW1GemE1M3YxYlRIeURRRVxuMS9XalhJbnl4cWkvdnptYnd0SE1vNmdVR0V1UTZzSFJ1OWh5"
-    "d0JvOVBkQnNlQlhZaVcwWVlwTElkME5WQmNEUlxuMmFEeDUybG04VEtFbFFYMDdGNXFMdnM9XG4tLS0tLUVORCBQUklWQVRF"
-    "IEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAidGdib3RodWJAemlwcHktZm9saW8tNDk0NzExLWgwLmlhbS5nc2Vy"
-    "dmljZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEwOTAwNTcyODkwNjg4NzY4NTU1NSIsCiAgImF1dGhfdXJpIjog"
-    "Imh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi9hdXRoIiwKICAidG9rZW5fdXJpIjogImh0dHBzOi8vb2F1"
-    "dGgyLmdvb2dsZWFwaXMuY29tL3Rva2VuIiwKICAiYXV0aF9wcm92aWRlcl94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3"
-    "Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsCiAgImNsaWVudF94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3"
-    "Lmdvb2dsZWFwaXMuY29tL3JvYm90L3YxL21ldGFkYXRhL3g1MDkvdGdib3RodWIlNDB6aXBweS1mb2xpby00OTQ3MTEtaDAu"
-    "aWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJ1bml2ZXJzZV9kb21haW4iOiAiZ29vZ2xlYXBpcy5jb20iCn0="
-)
+B64_CREDS = "eyJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsICJwcm9qZWN0X2lkIjogInppcHB5LWZvbGlvLTQ5NDcxMS1oMCIsICJwcml2YXRlX2tleV9pZCI6ICI4MWUwMWM5ZmRmNGZiMmI2ZWM1YmJmMDcwOWY5ZmVkNWY5ZTk5NDE0IiwgInByaXZhdGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFENVN4L1VrSHQrSXpRSlxudXJZTWMvUnBHRGRiUjhNTTMrYUZxZzZ6ZTYwUzc3eE8yT0Z6RytQL1VrVHpTSUFRSmdCQkN0SjZvZHF3WlFvVFxuK3JVZkpkN0djZVlkLzRLdGtOZ0RPZTkrM01jM0xOeFduV3pRSkFYZ0x3SXgzVTZYYmRxWk9qNWJWckFndnNlaFxucVBvd2Y1UVM1ZW5md2szL2VqY0RwMzBuV0hMVHlnODN6YlVpaDczN21sZTJSUlducFBhZm44em5JVXRsUGxSYVxuc1V1ai8rVGpScy9jL0tKR3ArV0xOdmpsU1dad0dsV2NLV1BFbUI3QmhkKzZNUEp1Z244d0VXK255L2g0NmlCWlxuM2lQemJZTVUwYThydFpYMCtLaDNlbVVqRTB6Slh6RG9RWDR1dHhhc3Eyend2T05qSTlTVjhHNHJCNzRlY3htSlxuZkRVejMrSjdBZ01CQUFFQ2dnRUFkOXlKaU9RUkpHUmJ0R1BiL1IvUmY2aGZrVmx2TEdVSkN2SnBrQjJpYVN6d1xuWHY3RFkxdWhJNVZVUnA3d3lCTGxZMkNITStSWGFDR2tsMWVmTjBNM21qV1FYWk1KSzFldHJOdHh6ZzdzRUJqWFxuTmlRSitnZWY5WnJVbE5JaDVBZ3pKeUpNY2hFN3JQcmR0Rm94TlJsYVFqM2VWYkl3VzJwUlFrWUpGRjVnRTNpc1xuS3lMcjZVNlA1TjVIS3dzS096R1JCU3NWMzZuZ2ZyQWtGVzhRNzh2WkIzYjkwa0hBdjF0dFV2ODh2d25BajFOQVxuWWdLRmNPKytWKzliUkRhN2dabks0RlFxRkVad1Z0bzI2Z3FXWkI5NHdMVUh4SFlTUkhHMVBwOUJpQVp5WFZ5VFxudGVRNXVYaTJhalh0d3I0Q29zMEIxM3MzbTZvT3hPV2V1Z2FzK1BCSERRS0JnUUQ5YllTNlF2aHZsUUFIVlVFZ1xuMXRHSng1a1BDbGxhZGJyVi9MR1BwWDc1YWJRWG4yVDdpRVZTNFVjMkhMZVJPbHgwbmFXcDUvMmp1N1J4NDRkWFxudFZLOHYxaXozZDA2RzZSc29oeVpoWU5hWUkvU0djQWpxSDBYeWJNL1QyVklhcXI2djRPZ1dQczBpcldJaGVqbVxuaDEwaEExNUgvRXFkVytwVUpCL0YrNEZ4UHdLQmdRRDcwdDBUdHloeGN4RnVpNzFFMFZDaWdMYkE5YlpmQWI5YVxuNnBKMHJTTDcreHM5NUJ0ZzJZSzJDSkZRYnBzQ0tDZkgvRTB0REUyNmJtWjNucHozSFMrVHNUZEIrVkU1bzhZNFxueXBhTU1Ndi9wcFR5V1FMTkNlWit6b24veUZ6aGZXc1Nla0xjS09IZ24wWlJtaVJEd3JZczd0M0MxTzZERFVRdFxuUTN6WnJ4QUR4UUtCZ1FDNkwzL1hwK1FGZGg0elJQczRPUnB3Y3VlTUdUcFVMekk0akJHWFN5cmg2anFaTUUxc1xuVGswLytxbnFvMlpwbDhyZEVnVG5zcnl4VWZIYnlpRmcycUlTY1RHbDAxWDRudDVKd1QvcHVpRXFnTTZvdUtwa1xuaUNCL0hYeEhBdm1TSG12SEZIU0xsVlBZNGg5RVViMHR3RDAzUjlZNFpLNGN0YTZPYW91OVZHMWcyUUtCZ0U3aFxueVpDd2NnRy9xcmszR3EyZzU2SlBzVytXU0c5UVM5Rzk0dXliZzNidFBLWlJldVlHbkhSTEVNSGlNN29rTy9uZ1xuSllpejd2RTBQZkxBZzZqQXdyTi84ckErMmR1MVdwVlZtSDBIbUE5WDdoWlFIWmwrdlc0QllxYjE2MnBTOENSVVxubWZiKzgycDZXZnViempwUGx1TlNXN0w1SWxGNDZWOUlZYWFLdVBpRkFvR0FZYWdlZlVCYmJLczVmOHhtakhIVFxub3BycTZjYWowNGNnMGtkVmdHOW1ocUtQcFA0YXV3MDZHWkdxR0xtVDlHaFJwdlArTW1GemE1M3YxYlRIeURRRVxuMS9XalhJbnl4cWkvdnptYnd0SE1vNmdVR0V1UTZzSFJ1OWh5d0JvOVBkQnNlQlhZaVcwWVlwTElkME5WQmNEUlxuMmFEeDUybG04VEtFbFFYMDdGNXFMdnM9XG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4iLCAiY2xpZW50X2VtYWlsIjogInRnYm90aHViQHppcHB5LWZvbGlvLTQ5NDcxMS1oMC5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsICJjbGllbnRfaWQiOiAiMTA5MDA1NzI4OTA2ODg3Njg1NTU1IiwgImF1dGhfdXJpIjogImh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi9hdXRoIiwgInRva2VuX3VyaSI6ICJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsICJhdXRoX3Byb3ZpZGVyX3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vb2F1dGgyL3YxL2NlcnRzIiwgImNsaWVudF94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL3JvYm90L3YxL21ldGFkYXRhL3g1MDkvdGdib3RodWIlNDB6aXBweS1mb2xpby00OTQ3MTEtaDAuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLCAidW5pdmVyc2VfZG9tYWluIjogImdvb2dsZWFwaXMuY29tIn0="
 
 class SheetsSyncManager:
     def __init__(self, spreadsheet_id=SPREADSHEET_ID, credentials_file=CREDENTIALS_FILE):
@@ -90,14 +56,23 @@ class SheetsSyncManager:
                     logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
 
             if not creds and os.path.exists(self.credentials_file):
-                creds = Credentials.from_service_account_file(self.credentials_file, scopes=scopes)
+                try:
+                    creds = Credentials.from_service_account_file(self.credentials_file, scopes=scopes)
+                    logger.info(f"Loaded Google credentials from {self.credentials_file}.")
+                except Exception as e:
+                    logger.error(f"Failed to load credentials from file {self.credentials_file}: {e}")
 
             # Guaranteed fallback: Decode B64_CREDS
             if not creds and B64_CREDS:
                 try:
                     decoded = base64.b64decode(B64_CREDS).decode("utf-8")
                     info = json.loads(decoded)
+                    if isinstance(info.get("private_key"), str):
+                        info["private_key"] = info["private_key"].replace("\\n", "\n")
                     creds = Credentials.from_service_account_info(info, scopes=scopes)
+                    logger.info("Loaded Google credentials from built-in B64 service account.")
+                except Exception as e:
+                    logger.error(f"Failed to decode B64 service account: {e}")
                     logger.info("Loaded Google credentials from built-in B64 service account.")
                 except Exception as e:
                     logger.error(f"Failed to decode B64 service account: {e}")
@@ -218,6 +193,8 @@ class SheetsSyncManager:
                 task.get("message_link", "")
             ]
             self.sheet.append_row(row)
+            self._tasks_cache = []
+            self._tasks_cache_time = 0
             logger.info(f"Task #{next_id} appended to Google Sheets.")
             return next_id
 
@@ -233,6 +210,8 @@ class SheetsSyncManager:
             if cell:
                 # Column 7 is 'Статус'
                 self.sheet.update_cell(cell.row, 7, new_status)
+                self._tasks_cache = []
+                self._tasks_cache_time = 0
                 logger.info(f"Task #{task_id} status updated to {new_status} in Google Sheets.")
             else:
                 logger.warning(f"Task #{task_id} not found in Google Sheets for status update.")
@@ -253,6 +232,8 @@ class SheetsSyncManager:
             if target_row:
                 col = 10 if is_final else 8
                 self.sheet.update_cell(target_row, col, str(rating))
+                self._tasks_cache = []
+                self._tasks_cache_time = 0
                 logger.info(f"Task #{task_id} rating updated to {rating} in Google Sheets (col {col}).")
         except Exception as e:
             logger.error(f"Error updating task #{task_id} rating in Google Sheets: {e}")
@@ -273,6 +254,10 @@ class SheetsSyncManager:
                 self.sheet.update_cell(target_row, 7, "Disputed")
                 # Column 9 is 'Причина оспаривания'
                 self.sheet.update_cell(target_row, 9, dispute_reason)
+                # Column 10 is 'Итоговая оценка' - clear it while dispute is active
+                self.sheet.update_cell(target_row, 10, "")
+                self._tasks_cache = []
+                self._tasks_cache_time = 0
                 logger.info(f"Task #{task_id} marked as 'Disputed' with comment in Google Sheets (row {target_row}).")
         except Exception as e:
             logger.error(f"Error updating task #{task_id} dispute in Google Sheets: {e}")
@@ -288,6 +273,8 @@ class SheetsSyncManager:
                     target_row = idx + 1
                     # Set Status (Column 7) to 'Удалена' so it is clearly visible in the sheet
                     self.sheet.update_cell(target_row, 7, "Удалена")
+                    self._tasks_cache = []
+                    self._tasks_cache_time = 0
                     logger.info(f"Task #{task_id} status updated to 'Удалена' in Google Sheets (row {target_row}).")
                     return True
             return False

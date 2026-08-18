@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import datetime, timedelta
 
@@ -7,14 +8,24 @@ COMMANDS = [
     "задача:", "задача", "задачу:", "задачу", "task:", "task", "todo:"
 ]
 
+ADMIN_USERNAMES = {"orzmkh", "axi0603"}
+ADMIN_IDS = {"509067967"}
+env_admins = os.getenv("ADMIN_IDS", "")
+if env_admins:
+    for aid in env_admins.split(","):
+        if aid.strip():
+            ADMIN_IDS.add(aid.strip())
+
 def is_authorized_author(user) -> bool:
     """
     Rule 3: ONLY @orzmkh (Руководитель) is allowed to create and manage tasks.
     """
     if not user:
         return False
+    if hasattr(user, "id") and str(user.id) in ADMIN_IDS:
+        return True
     username = (user.username or "").lower().replace("@", "").strip()
-    return username == "orzmkh"
+    return username in ADMIN_USERNAMES
 
 
 def is_recurring_task_message(text: str) -> bool:

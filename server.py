@@ -37,6 +37,45 @@ RICH_BOT_URL = os.getenv("RICH_BOT_URL", "").strip().rstrip("/")
 FLEET_BOT_URL = os.getenv("FLEET_BOT_URL", "").strip().rstrip("/")
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "").strip()
 
+B64_CREDS = "eyJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsICJwcm9qZWN0X2lkIjogInppcHB5LWZvbGlvLTQ5NDcxMS1oMCIsICJwcml2YXRlX2tleV9pZCI6ICI4MWUwMWM5ZmRmNGZiMmI2ZWM1YmJmMDcwOWY5ZmVkNWY5ZTk5NDE0IiwgInByaXZhdGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFENVN4L1VrSHQrSXpRSlxudXJZTWMvUnBHRGRiUjhNTTMrYUZxZzZ6ZTYwUzc3eE8yT0Z6RytQL1VrVHpTSUFRSmdCQkN0SjZvZHF3WlFvVFxuK3JVZkpkN0djZVlkLzRLdGtOZ0RPZTkrM01jM0xOeFduV3pRSkFYZ0x3SXgzVTZYYmRxWk9qNWJWckFndnNlaFxucVBvd2Y1UVM1ZW5md2szL2VqY0RwMzBuV0hMVHlnODN6YlVpaDczN21sZTJSUlducFBhZm44em5JVXRsUGxSYVxuc1V1ai8rVGpScy9jL0tKR3ArV0xOdmpsU1dad0dsV2NLV1BFbUI3QmhkKzZNUEp1Z244d0VXK255L2g0NmlCWlxuM2lQemJZTVUwYThydFpYMCtLaDNlbVVqRTB6Slh6RG9RWDR1dHhhc3Eyend2T05qSTlTVjhHNHJCNzRlY3htSlxuZkRVejMrSjdBZ01CQUFFQ2dnRUFkOXlKaU9RUkpHUmJ0R1BiL1IvUmY2aGZrVmx2TEdVSkN2SnBrQjJpYVN6d1xuWHY3RFkxdWhJNVZVUnA3d3lCTGxZMkNITStSWGFDR2tsMWVmTjBNM21qV1FYWk1KSzFldHJOdHh6ZzdzRUJqWFxuTmlRSitnZWY5WnJVbE5JaDVBZ3pKeUpNY2hFN3JQcmR0Rm94TlJsYVFqM2VWYkl3VzJwUlFrWUpGRjVnRTNpc1xuS3lMcjZVNlA1TjVIS3dzS096R1JCU3NWMzZuZ2ZyQWtGVzhRNzh2WkIzYjkwa0hBdjF0dFV2ODh2d25BajFOQVxuWWdLRmNPKytWKzliUkRhN2dabks0RlFxRkVad1Z0bzI2Z3FXWkI5NHdMVUh4SFlTUkhHMVBwOUJpQVp5WFZ5VFxudGVRNXVYaTJhalh0d3I0Q29zMEIxM3MzbTZvT3hPV2V1Z2FzK1BCSERRS0JnUUQ5YllTNlF2aHZsUUFIVlVFZ1xuMXRHSng1a1BDbGxhZGJyVi9MR1BwWDc1YWJRWG4yVDdpRVZTNFVjMkhMZVJPbHgwbmFXcDUvMmp1N1J4NDRkWFxudFZLOHYxaXozZDA2RzZSc29oeVpoWU5hWUkvU0djQWpxSDBYeWJNL1QyVklhcXI2djRPZ1dQczBpcldJaGVqbVxuaDEwaEExNUgvRXFkVytwVUpCL0YrNEZ4UHdLQmdRRDcwdDBUdHloeGN4RnVpNzFFMFZDaWdMYkE5YlpmQWI5YVxuNnBKMHJTTDcreHM5NUJ0ZzJZSzJDSkZRYnBzQ0tDZkgvRTB0REUyNmJtWjNucHozSFMrVHNUZEIrVkU1bzhZNFxueXBhTU1Ndi9wcFR5V1FMTkNlWit6b24veUZ6aGZXc1Nla0xjS09IZ24wWlJtaVJEd3JZczd0M0MxTzZERFVRdFxuUTN6WnJ4QUR4UUtCZ1FDNkwzL1hwK1FGZGg0elJQczRPUnB3Y3VlTUdUcFVMekk0akJHWFN5cmg2anFaTUUxc1xuVGswLytxbnFvMlpwbDhyZEVnVG5zcnl4VWZIYnlpRmcycUlTY1RHbDAxWDRudDVKd1QvcHVpRXFnTTZvdUtwa1xuaUNCL0hYeEhBdm1TSG12SEZIU0xsVlBZNGg5RVViMHR3RDAzUjlZNFpLNGN0YTZPYW91OVZHMWcyUUtCZ0U3aFxueVpDd2NnRy9xcmszR3EyZzU2SlBzVytXU0c5UVM5Rzk0dXliZzNidFBLWlJldVlHbkhSTEVNSGlNN29rTy9uZ1xuSllpejd2RTBQZkxBZzZqQXdyTi84ckErMmR1MVdwVlZtSDBIbUE5WDdoWlFIWmwrdlc0QllxYjE2MnBTOENSVVxubWZiKzgycDZXZnViempwUGx1TlNXN0w1SWxGNDZWOUlZYWFLdVBpRkFvR0FZYWdlZlVCYmJLczVmOHhtakhIVFxub3BycTZjYWowNGNnMGtkVmdHOW1ocUtQcFA0YXV3MDZHWkdxR0xtVDlHaFJwdlArTW1GemE1M3YxYlRIeURRRVxuMS9XalhJbnl4cWkvdnptYnd0SE1vNmdVR0V1UTZzSFJ1OWh5d0JvOVBkQnNlQlhZaVcwWVlwTElkME5WQmNEUlxuMmFEeDUybG04VEtFbFFYMDdGNXFMdnM9XG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4iLCAiY2xpZW50X2VtYWlsIjogInRnYm90aHViQHppcHB5LWZvbGlvLTQ5NDcxMS1oMC5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsICJjbGllbnRfaWQiOiAiMTA5MDA1NzI4OTA2ODg3Njg1NTU1IiwgImF1dGhfdXJpIjogImh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi9hdXRoIiwgInRva2VuX3VyaSI6ICJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsICJhdXRoX3Byb3ZpZGVyX3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vb2F1dGgyL3YxL2NlcnRzIiwgImNsaWVudF94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL3JvYm90L3YxL21ldGFkYXRhL3g1MDkvdGdib3RodWIlNDB6aXBweS1mb2xpby00OTQ3MTEtaDAuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLCAidW5pdmVyc2VfZG9tYWluIjogImdvb2dsZWFwaXMuY29tIn0="
+
+def get_google_sheets_client():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    
+    creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json_env:
+        try:
+            s_clean = creds_json_env.strip().strip("'").strip('"')
+            info = json.loads(s_clean)
+            if isinstance(info.get("private_key"), str):
+                info["private_key"] = info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(info, scopes=scopes)
+            return gspread.authorize(creds)
+        except Exception as e:
+            logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
+
+    for loc in ["credentials.json", os.path.join(BASE_DIR, "credentials.json")]:
+        if os.path.exists(loc):
+            try:
+                creds = Credentials.from_service_account_file(loc, scopes=scopes)
+                return gspread.authorize(creds)
+            except Exception:
+                pass
+
+    if B64_CREDS:
+        try:
+            decoded = base64.b64decode(B64_CREDS).decode("utf-8")
+            info = json.loads(decoded)
+            if isinstance(info.get("private_key"), str):
+                info["private_key"] = info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(info, scopes=scopes)
+            return gspread.authorize(creds)
+        except Exception as e:
+            logger.error(f"Failed B64_CREDS client: {e}")
+    return None
+
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -1021,21 +1060,12 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         return res
 
     def get_tasks_data(self):
-        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
         now_time = time.time()
-        if creds_json_env:
-            if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
-                return TASKS_SHEETS_CACHE["data"]
-            try:
-                import gspread
-                from google.oauth2.service_account import Credentials
-                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                s_clean = creds_json_env.strip().strip("'").strip('"')
-                info = json.loads(s_clean)
-                if isinstance(info.get("private_key"), str):
-                    info["private_key"] = info["private_key"].replace("\\n", "\n")
-                creds = Credentials.from_service_account_info(info, scopes=scopes)
-                client = gspread.authorize(creds)
+        if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
+            return TASKS_SHEETS_CACHE["data"]
+        try:
+            client = get_google_sheets_client()
+            if client:
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
                 rows = sheet.get_all_values()
@@ -1075,14 +1105,22 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         except Exception:
                             final_num = 0
 
-                        has_final = final_num > 0
-                        has_dispute_flag = bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено", "спор"])
-                        is_disputed = has_dispute_flag and not has_final
-
                         status_val = r[stat_idx] if len(r) > stat_idx else "Active"
+                        if status_val.strip().lower() in ["удалена", "deleted"]:
+                            continue
+
+                        is_explicitly_disputed = status_val.strip().lower() in ["disputed", "оспорена", "оспорено", "спор"]
+                        has_dispute_comment = bool(disp_val.strip())
+                        is_explicitly_done = status_val.strip().lower() in ["done", "завершено", "завершена", "выполнено"]
+
+                        # Active dispute condition:
+                        # 1) If status is explicitly 'Disputed' -> ALWAYS Disputed!
+                        # 2) If it has dispute comment and status is not explicitly 'Done'
+                        is_disputed = is_explicitly_disputed or (has_dispute_comment and not is_explicitly_done)
+
                         if is_disputed:
                             status_val = "Disputed"
-                        elif has_final or init_num > 0 or status_val.strip().lower() in ["done", "завершено", "завершена", "выполнено"]:
+                        elif is_explicitly_done or final_num > 0 or init_num > 0:
                             status_val = "Done"
 
                         tasks.append({
@@ -1095,9 +1133,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             "status": status_val,
                             "priority": "Medium",
                             "city": "Ташкент",
-                            "rating": final_num if final_num > 0 else (init_num if not is_disputed else 0),
+                            "rating": 0 if is_disputed else (final_num if final_num > 0 else init_num),
                             "initial_rating": init_num,
-                            "final_rating": final_num,
+                            "final_rating": 0 if is_disputed else final_num,
                             "is_disputed": is_disputed,
                             "rating_comment": disp_val
                         })
@@ -1106,10 +1144,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 TASKS_SHEETS_CACHE["timestamp"] = now_time
                 if res_tasks:
                     return res_tasks
-            except Exception as e:
-                logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
-                if TASKS_SHEETS_CACHE["data"]:
-                    return TASKS_SHEETS_CACHE["data"]
+        except Exception as e:
+            logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
+            if TASKS_SHEETS_CACHE["data"]:
+                return TASKS_SHEETS_CACHE["data"]
 
         if os.path.exists(TASKS_DB_PATH):
             try:
@@ -1193,18 +1231,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 logger.error(f"Failed to complete task in sqlite: {e}")
 
         # Update status in Google Sheets & invalidate cache
-        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-        if creds_json_env:
-            try:
-                import gspread
-                from google.oauth2.service_account import Credentials
-                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                s_clean = creds_json_env.strip().strip("'").strip('"')
-                info = json.loads(s_clean)
-                if isinstance(info.get("private_key"), str):
-                    info["private_key"] = info["private_key"].replace("\\n", "\n")
-                creds = Credentials.from_service_account_info(info, scopes=scopes)
-                client = gspread.authorize(creds)
+        try:
+            client = get_google_sheets_client()
+            if client:
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
                 headers = [str(h).strip() for h in sheet.row_values(1)]
@@ -1225,8 +1254,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
                         assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
                 TASKS_SHEETS_CACHE["timestamp"] = 0
-            except Exception as e:
-                logger.error(f"Failed to complete task in Google Sheets: {e}")
+        except Exception as e:
+            logger.error(f"Failed to complete task in Google Sheets: {e}")
 
         # Send completion notification to Telegram group
         try:
@@ -1256,18 +1285,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         prev_init_rating = 0
         was_disputed = False
 
-        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-        if creds_json_env:
-            try:
-                import gspread
-                from google.oauth2.service_account import Credentials
-                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                s_clean = creds_json_env.strip().strip("'").strip('"')
-                info = json.loads(s_clean)
-                if isinstance(info.get("private_key"), str):
-                    info["private_key"] = info["private_key"].replace("\\n", "\n")
-                creds = Credentials.from_service_account_info(info, scopes=scopes)
-                client = gspread.authorize(creds)
+        try:
+            client = get_google_sheets_client()
+            if client:
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
                 headers = [str(h).strip() for h in sheet.row_values(1)]
@@ -1307,8 +1327,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     sheet.update_cell(target_row, final_col, f"{rating}/5")
 
                 TASKS_SHEETS_CACHE["timestamp"] = 0
-            except Exception as e:
-                logger.error(f"Failed to update task rating in Google Sheets: {e}")
+        except Exception as e:
+            logger.error(f"Failed to update task rating in Google Sheets: {e}")
 
         # Send Telegram notification
         try:

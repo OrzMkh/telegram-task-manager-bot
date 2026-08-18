@@ -242,7 +242,7 @@ async def rate_task_callback_handler(update: Update, context: ContextTypes.DEFAU
         update_task_status(task_id, "Completed", db_path=DB_PATH)
         if sheets_sync_instance:
             sheets_sync_instance.update_task_status(task_id, "Completed")
-            sheets_sync_instance.update_task_rating(task_id, stars, is_final=True)
+            sheets_sync_instance.update_task_rating(task_id, stars, is_final=(stars >= 5))
 
         task = get_task(task_id, db_path=DB_PATH) or {}
         task_text = task.get("task_text", f"Задача #{task_id}")
@@ -592,7 +592,7 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     assignee_map = {
         "assign_isslamov": "@isslamov",
         "assign_axi0603": "@axi0603",
-        "assign_orzmkh": "@axi0603",
+        "assign_orzmkh": "@orzmkh",
         "assign_jahangir": "@Silent_trickster",
         "assign_team": "Команда",
     }
@@ -631,7 +631,7 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     await query.answer(f"Исполнитель: {assignee}")
     task_text = pending.get("task_text", "")
-    author = pending.get("author", f"@{user.username}")
+    author = pending.get("author", f"@{user.username}" if user.username else "@orzmkh")
     raw_text = pending.get("raw_text", task_text)
 
     now = get_now()
@@ -679,7 +679,7 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         f"👤 <b>Исполнитель:</b> {assignee}\n"
         f"✍️ <b>Постановщик:</b> {author}\n"
         f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
-        f"📊 <b>Статус:</b> Занесена в БД и Google Таблицу"
+        f"📊 <b>Статус:</b> Занесена в БД, Google Таблицу и Master Hub"
     )
 
     try:
@@ -691,21 +691,40 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         logger.error(f"Error editing message after assigning: {e}")
 
+    # Send direct notification to chat tagging the assignee
+    if assignee and assignee != "Команда":
+        try:
+            chat_id = query.message.chat_id if query.message else message.chat_id
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🎯 {assignee}, вам назначена задача <b>#{canonical_id}</b>: <i>{task_text}</i>\n⏰ Срок / SLA: <b>{sla_str}</b>",
+                parse_mode="HTML"
+            )
+        except Exception as e_tag:
+            logger.warning(f"Could not send tag message to assignee: {e_tag}")
+
 
 async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     
+    user = update.message.from_user
+    user_id_str = str(user.id) if user else ""
+
     # 1. Check if there is a pending task waiting for @orzmkh to specify assignee
-    pending = context.user_data.get("pending_task")
-    if pending and is_authorized_author(update.message.from_user):
+    pending = None
+    if context and "pending_task" in context.user_data:
+        pending = context.user_data.pop("pending_task")
+    elif user_id_str and user_id_str in GLOBAL_PENDING_TASKS:
+        pending = GLOBAL_PENDING_TASKS.pop(user_id_str)
+
+    if pending and is_authorized_author(user):
         text_in = update.message.text.strip()
         mentions = re.findall(r"@[\w_]+", text_in)
         assignee = " ".join(mentions) if mentions else (text_in if text_in.startswith("@") else f"@{text_in}")
-        context.user_data.pop("pending_task", None)
 
         task_text = pending.get("task_text", "")
-        author = pending.get("author", f"@{update.message.from_user.username}")
+        author = pending.get("author", f"@{user.username}" if user and user.username else "@orzmkh")
         raw_text = pending.get("raw_text", task_text)
 
         now = get_now()
@@ -750,7 +769,7 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
             f"👤 <b>Исполнитель:</b> {assignee}\n"
             f"✍️ <b>Постановщик:</b> {author}\n"
             f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
-            f"📊 <b>Статус:</b> Занесена в БД и Google Таблицу"
+            f"📊 <b>Статус:</b> Занесена в БД, Google Таблицу и Master Hub"
         )
         await update.message.reply_text(confirm_text, parse_mode="HTML", reply_markup=reply_markup, reply_to_message_id=update.message.message_id)
         return
