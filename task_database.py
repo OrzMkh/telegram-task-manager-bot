@@ -161,6 +161,8 @@ def init_db(db_path="tasks.db"):
         """)
         # Ensure rating and dispute columns exist
         cols_to_check = [
+            ("reminder_sent", "INTEGER DEFAULT 0"),
+            ("completed_at", "TEXT DEFAULT ''"),
             ("priority", "TEXT DEFAULT 'Medium'"),
             ("city", "TEXT DEFAULT 'Ташкент'"),
             ("rating", "INTEGER DEFAULT 0"),
