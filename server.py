@@ -1111,7 +1111,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
                         is_explicitly_disputed = status_val.strip().lower() in ["disputed", "оспорена", "оспорено", "спор"]
                         has_dispute_comment = bool(disp_val.strip())
-                        is_explicitly_done = status_val.strip().lower() in ["done", "завершено", "завершена", "выполнено"]
+                        is_explicitly_done = status_val.strip().lower() in ["done", "completed", "завершено", "завершена", "выполнено"]
 
                         # Active dispute condition:
                         # 1) If status is explicitly 'Disputed' -> ALWAYS Disputed!

@@ -31,6 +31,7 @@ from task_handlers import (
     cal_time_callback_handler,
     cal_ignore_callback_handler,
     sla_back_callback_handler,
+    complete_task_early_callback_handler,
 )
 
 from task_report_handler import (
@@ -143,6 +144,7 @@ def main():
     application.add_handler(CallbackQueryHandler(cal_time_callback_handler, pattern="^cal_time_"))
     application.add_handler(CallbackQueryHandler(cal_ignore_callback_handler, pattern="^cal_ignore_"))
     application.add_handler(CallbackQueryHandler(sla_back_callback_handler, pattern="^sla_back_"))
+    application.add_handler(CallbackQueryHandler(complete_task_early_callback_handler, pattern="^complete_task_early_"))
 
     # 8. Register Auto-detection Message Handler for non-command messages
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), dispute_reason_input_handler), group=1)

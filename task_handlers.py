@@ -137,7 +137,20 @@ async def my_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     footer = f"\n\n━━━━━━━━━━━━━━━━━━\n👤 <b>Исполнитель:</b> {assignee_str} | ✍️ <b>Автор:</b> {author_str}"
     msg = body + footer
-    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+
+    keyboard_buttons = []
+    row = []
+    for t in user_tasks:
+        t_id = t.get("id")
+        row.append(InlineKeyboardButton(f"✅ Выполнил #{t_id}", callback_data=f"complete_task_early_{t_id}"))
+        if len(row) == 2:
+            keyboard_buttons.append(row)
+            row = []
+    if row:
+        keyboard_buttons.append(row)
+        
+    reply_markup = InlineKeyboardMarkup(keyboard_buttons) if keyboard_buttons else None
+    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=True)
 
 
 
@@ -192,6 +205,13 @@ async def list_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def done_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
+    user = update.message.from_user
+    if not user:
+        return
+
     if not context.args:
         await update.message.reply_text("⚠️ Использование: <code>/done &lt;ID задачи&gt;</code> (например, <code>/done 1</code>)", parse_mode="HTML")
         return
@@ -208,25 +228,71 @@ async def done_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Задача #{task_id} не найдена.")
         return
 
-    # Prompt manager to rate the task 1-5 stars before notifying
-    rating_keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⭐ 1", callback_data=f"rate_task_{task_id}_1"),
-            InlineKeyboardButton("⭐ 2", callback_data=f"rate_task_{task_id}_2"),
-            InlineKeyboardButton("⭐ 3", callback_data=f"rate_task_{task_id}_3"),
-            InlineKeyboardButton("⭐ 4", callback_data=f"rate_task_{task_id}_4"),
-            InlineKeyboardButton("⭐ 5", callback_data=f"rate_task_{task_id}_5"),
-        ]
-    ])
+    if is_authorized_author(user):
+        # Prompt manager to rate the task 1-5 stars before notifying
+        rating_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⭐ 1", callback_data=f"rate_task_{task_id}_1"),
+                InlineKeyboardButton("⭐ 2", callback_data=f"rate_task_{task_id}_2"),
+                InlineKeyboardButton("⭐ 3", callback_data=f"rate_task_{task_id}_3"),
+                InlineKeyboardButton("⭐ 4", callback_data=f"rate_task_{task_id}_4"),
+                InlineKeyboardButton("⭐ 5", callback_data=f"rate_task_{task_id}_5"),
+            ]
+        ])
 
-    await update.message.reply_text(
-        f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
-        f"📋 <b>Задача:</b> {task.get('task_text', '')}\n"
-        f"👤 <b>Исполнитель:</b> {task.get('assignee', 'Команда')}\n\n"
-        f"Пожалуйста, выберите оценку качества выполнения от 1 до 5:",
-        parse_mode="HTML",
-        reply_markup=rating_keyboard
-    )
+        await update.message.reply_text(
+            f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+            f"📋 <b>Задача:</b> {task.get('task_text', '')}\n"
+            f"👤 <b>Исполнитель:</b> {task.get('assignee', 'Команда')}\n\n"
+            f"Пожалуйста, выберите оценку качества выполнения от 1 до 5:",
+            parse_mode="HTML",
+            reply_markup=rating_keyboard
+        )
+    else:
+        assignee = task.get("assignee", "")
+        username = (user.username or "").lower().replace("@", "").strip()
+        
+        is_assignee = (
+            "команда" in assignee.lower() or 
+            username in assignee.lower() or 
+            (user.first_name and user.first_name.lower() in assignee.lower())
+        )
+        
+        if not is_assignee:
+            await update.message.reply_text(f"⛔ Вы не являетесь исполнителем этой задачи ({assignee})!")
+            return
+
+        if task.get("status") in ("Completed", "done"):
+            await update.message.reply_text(f"⚠️ Задача #{task_id} уже выполнена.")
+            return
+
+        # Mark task as completed (Completed) in SQLite and Sheets
+        update_task_status(task_id, "Completed", db_path=DB_PATH)
+        if sheets_sync_instance:
+            try:
+                sheets_sync_instance.update_task_status(task_id, "Completed")
+            except Exception as e:
+                logger.error(f"Failed to update task #{task_id} status in Sheets: {e}")
+
+        # Send rating prompt to the manager in the chat
+        rating_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⭐ 1", callback_data=f"rate_task_{task_id}_1"),
+                InlineKeyboardButton("⭐ 2", callback_data=f"rate_task_{task_id}_2"),
+                InlineKeyboardButton("⭐ 3", callback_data=f"rate_task_{task_id}_3"),
+                InlineKeyboardButton("⭐ 4", callback_data=f"rate_task_{task_id}_4"),
+                InlineKeyboardButton("⭐ 5", callback_data=f"rate_task_{task_id}_5"),
+            ]
+        ])
+
+        await update.message.reply_text(
+            f"🔔 <b>ЗАДАЧА #{task_id} ОТМЕЧЕНА КАК ВЫПОЛНЕННАЯ</b>\n\n"
+            f"👤 <b>Исполнитель:</b> {assignee} отметил задачу как готовую досрочно.\n"
+            f"📋 <b>Задача:</b> {task.get('task_text', '')}\n\n"
+            f"👑 <b>@orzmkh, пожалуйста, оцените качество выполнения задачи:</b>",
+            parse_mode="HTML",
+            reply_markup=rating_keyboard
+        )
 
 
 async def rate_task_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -235,6 +301,11 @@ async def rate_task_callback_handler(update: Update, context: ContextTypes.DEFAU
         return
 
     data = query.data or ""
+    user = query.from_user
+    if not is_authorized_author(user):
+        await query.answer("⛔ Только руководитель @orzmkh может оценивать задачи!", show_alert=True)
+        return
+
     if data.startswith("rate_task_"):
         parts = data.split("_")
         task_id = int(parts[2])
@@ -1100,10 +1171,17 @@ async def _finalize_task_creation(update: Update, context: ContextTypes.DEFAULT_
     if assignee and assignee != "Команда":
         try:
             chat_id = query.message.chat_id if query and query.message else (update.message.chat_id if update.message else pending.get("chat_id"))
+            
+            # Inline button for the employee to complete early
+            complete_keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Выполнил(а) задачу", callback_data=f"complete_task_early_{canonical_id}")]
+            ])
+            
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=f"🎯 {assignee}, вам назначена задача <b>#{canonical_id}</b>: <i>{task_text}</i>\n⏰ Срок / SLA: <b>{sla_str}</b>",
-                parse_mode="HTML"
+                parse_mode="HTML",
+                reply_markup=complete_keyboard
             )
         except Exception as e_tag:
             logger.warning(f"Could not send tag message to assignee: {e_tag}")
@@ -1350,4 +1428,111 @@ async def sla_back_callback_handler(update: Update, context: ContextTypes.DEFAUL
         reply_markup=sla_keyboard
     )
     await query.answer()
+
+
+async def complete_task_early_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    user = query.from_user
+    username = (user.username or "").lower().replace("@", "").strip()
+
+    if data.startswith("complete_task_early_"):
+        task_id_str = data.replace("complete_task_early_", "")
+        if not task_id_str.isdigit():
+            await query.answer("⚠️ Неверный ID задачи.", show_alert=True)
+            return
+
+        task_id = int(task_id_str)
+        task = get_task(task_id, db_path=DB_PATH)
+
+        if not task:
+            await query.answer(f"❌ Задача #{task_id} не найдена.", show_alert=True)
+            return
+
+        assignee = task.get("assignee", "")
+        # Is the employee authorized to complete this task?
+        is_assignee = (
+            "команда" in assignee.lower() or 
+            username in assignee.lower() or 
+            (user.first_name and user.first_name.lower() in assignee.lower()) or
+            is_authorized_author(user)  # Manager can also complete
+        )
+
+        if not is_assignee:
+            await query.answer(f"⛔ Вы не являетесь исполнителем этой задачи ({assignee})!", show_alert=True)
+            return
+
+        # Check if already completed
+        if task.get("status") in ("Completed", "done"):
+            await query.answer("⚠️ Задача уже выполнена.", show_alert=True)
+            return
+
+        # Mark task as completed (Completed) in SQLite and Sheets
+        update_task_status(task_id, "Completed", db_path=DB_PATH)
+        if sheets_sync_instance:
+            try:
+                sheets_sync_instance.update_task_status(task_id, "Completed")
+            except Exception as e:
+                logger.error(f"Failed to update task #{task_id} status in Sheets: {e}")
+
+        await query.answer("✅ Задача отмечена как выполненная!")
+
+        # Edit original message to remove button or update text
+        try:
+            msg_text = query.message.text or query.message.caption or ""
+            if f"#{task_id}" in msg_text:
+                if "Мои задачи" in msg_text or "Мои активные задачи" in msg_text or "Список активных задач" in msg_text:
+                    # Regenerate /my list buttons
+                    target_tag = f"@{user.username}" if user.username else user.first_name
+                    user_tasks = get_user_tasks(target_tag, status="Active", db_path=DB_PATH, sheets_sync=sheets_sync_instance)
+                    keyboard_buttons = []
+                    row = []
+                    for t in user_tasks:
+                        t_id = t.get("id")
+                        row.append(InlineKeyboardButton(f"✅ Выполнил #{t_id}", callback_data=f"complete_task_early_{t_id}"))
+                        if len(row) == 2:
+                            keyboard_buttons.append(row)
+                            row = []
+                    if row:
+                        keyboard_buttons.append(row)
+                    reply_markup = InlineKeyboardMarkup(keyboard_buttons) if keyboard_buttons else None
+                    await query.edit_message_reply_markup(reply_markup=reply_markup)
+                else:
+                    # Single tag message
+                    await query.edit_message_text(
+                        f"🎯 {assignee}, вам назначена задача <b>#{task_id}</b>: <i>{task.get('task_text', '')}</i>\n"
+                        f"⏰ Срок / SLA: <b>{task.get('sla_deadline', '')}</b>\n\n"
+                        f"✅ <i>Отмечена как выполненная исполнителем @{user.username or user.first_name}.</i>",
+                        parse_mode="HTML"
+                    )
+            else:
+                await query.edit_message_reply_markup(reply_markup=None)
+        except Exception as e_edit:
+            logger.error(f"Failed to edit message after early completion: {e_edit}")
+
+        # Send rating prompt to the manager in the chat
+        rating_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⭐ 1", callback_data=f"rate_task_{task_id}_1"),
+                InlineKeyboardButton("⭐ 2", callback_data=f"rate_task_{task_id}_2"),
+                InlineKeyboardButton("⭐ 3", callback_data=f"rate_task_{task_id}_3"),
+                InlineKeyboardButton("⭐ 4", callback_data=f"rate_task_{task_id}_4"),
+                InlineKeyboardButton("⭐ 5", callback_data=f"rate_task_{task_id}_5"),
+            ]
+        ])
+
+        chat_id = query.message.chat_id if query.message else int(TASK_CHAT_ID)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🔔 <b>ЗАДАЧА #{task_id} ОТМЕЧЕНА КАК ВЫПОЛНЕННАЯ</b>\n\n"
+                 f"👤 <b>Исполнитель:</b> {assignee} отметил задачу как готовую досрочно.\n"
+                 f"📋 <b>Задача:</b> {task.get('task_text', '')}\n\n"
+                 f"👑 <b>@orzmkh, пожалуйста, оцените качество выполнения задачи:</b>",
+            parse_mode="HTML",
+            reply_markup=rating_keyboard
+        )
+
 
