@@ -1,4 +1,5 @@
 import logging
+import re
 import sqlite3
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -33,6 +34,64 @@ GLOBAL_RECURRING_DRAFTS = {}
 def set_sheets_sync(manager: SheetsSyncManager):
     global sheets_sync_instance
     sheets_sync_instance = manager
+
+
+def get_task_by_id(task_id: int) -> dict | None:
+    task = get_task(task_id, db_path=DB_PATH)
+    if task:
+        return task
+
+    if sheets_sync_instance:
+        try:
+            all_sheets_tasks = sheets_sync_instance.get_all_tasks()
+            sheet_task = next((t for t in all_sheets_tasks if int(t.get("id")) == task_id), None)
+            if sheet_task:
+                text = sheet_task.get("task_text", "")
+                assignee = sheet_task.get("assignee", "")
+                with get_connection(DB_PATH) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT * FROM tasks WHERE task_text = ? AND assignee = ?",
+                        (text, assignee)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        local_task = dict(row)
+                        local_id = local_task["id"]
+                        try:
+                            cursor.execute("UPDATE tasks SET id = ? WHERE id = ?", (task_id, local_id))
+                            conn.commit()
+                            local_task["id"] = task_id
+                            logger.info(f"Database self-healed: synced task ID {local_id} to Sheets ID {task_id}")
+                            return local_task
+                        except Exception as e_heal:
+                            logger.error(f"Failed to self-heal task ID: {e_heal}")
+                            return local_task
+                    else:
+                        try:
+                            cursor.execute(
+                                "INSERT INTO tasks (id, task_text, assignee, author, sla_deadline, created_at, status, reminder_sent, message_link) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+                                (
+                                    task_id,
+                                    text,
+                                    assignee,
+                                    sheet_task.get("author", "@orzmkh"),
+                                    sheet_task.get("sla_deadline", ""),
+                                    sheet_task.get("created_at", ""),
+                                    sheet_task.get("status", "Active"),
+                                    sheet_task.get("message_link", "")
+                                )
+                            )
+                            conn.commit()
+                            logger.info(f"Database self-healed: inserted missing task #{task_id} from Sheets to SQLite")
+                            return get_task(task_id, db_path=DB_PATH)
+                        except Exception as e_ins:
+                            logger.error(f"Failed to insert missing task: {e_ins}")
+        except Exception as e:
+            logger.error(f"Error in self-healing get_task_by_id: {e}")
+            
+    return None
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -222,7 +281,7 @@ async def done_task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     task_id = int(task_id_str)
-    task = get_task(task_id, db_path=DB_PATH)
+    task = get_task_by_id(task_id)
 
     if not task:
         await update.message.reply_text(f"❌ Задача #{task_id} не найдена.")
@@ -318,7 +377,7 @@ async def rate_task_callback_handler(update: Update, context: ContextTypes.DEFAU
             sheets_sync_instance.update_task_status(task_id, "Completed")
             sheets_sync_instance.update_task_rating(task_id, stars, is_final=(stars >= 5))
 
-        task = get_task(task_id, db_path=DB_PATH) or {}
+        task = get_task_by_id(task_id) or {}
         task_text = task.get("task_text", f"Задача #{task_id}")
         assignee = task.get("assignee", "Команда")
 
@@ -501,7 +560,7 @@ async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT
         cb_assignee = parts[1] if len(parts) > 1 else ""
 
         clean_num = int(str(task_id).replace("#", "").strip())
-        task = get_task(clean_num, db_path=DB_PATH) or {}
+        task = get_task_by_id(clean_num) or {}
 
         # 1. Determine target assignee from multiple sources
         assignee = task.get("assignee", "") or cb_assignee
@@ -1446,7 +1505,7 @@ async def complete_task_early_callback_handler(update: Update, context: ContextT
             return
 
         task_id = int(task_id_str)
-        task = get_task(task_id, db_path=DB_PATH)
+        task = get_task_by_id(task_id)
 
         if not task:
             await query.answer(f"❌ Задача #{task_id} не найдена.", show_alert=True)
