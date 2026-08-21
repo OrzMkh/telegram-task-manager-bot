@@ -1,13 +1,16 @@
 import logging
-from datetime import datetime
+import sqlite3
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
 from task_database import (
     add_task, get_all_tasks, get_user_tasks, get_task, update_task_status, delete_task,
-    add_recurring_task, get_all_recurring_tasks, get_recurring_task, delete_recurring_task
+    add_recurring_task, get_all_recurring_tasks, get_recurring_task, delete_recurring_task,
+    get_connection
 )
 from task_sheets_sync import SheetsSyncManager
+
 from task_detector import (
     is_task_message,
     is_recurring_task_message,
@@ -366,78 +369,9 @@ async def _process_and_create_task(update: Update, task_text: str, context: Cont
         GLOBAL_PENDING_TASKS[str(sent_msg.message_id)] = task_draft
         return
 
-    now = get_now()
-    created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    
-    raw_text = message.text or task_text
-    sla_dt = parse_sla_deadline(raw_text, base_time=now)
-    sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
+    task_draft["assignee"] = assignee
+    await _prompt_for_sla(update, task_draft, context)
 
-    # Add task to SQLite DB
-    task_dict = add_task(
-        task_text=task_text,
-        assignee=assignee,
-        author=author,
-        sla_deadline=sla_str,
-        created_at=created_at_str,
-        message_link=msg_link,
-        db_path=DB_PATH
-    )
-
-
-    canonical_id = task_dict.get("id")
-
-    # Sync to Google Sheets and get the true sequential ID
-    if sheets_sync_instance:
-        try:
-            sheet_id = sheets_sync_instance.append_task(task_dict)
-            if sheet_id:
-                canonical_id = sheet_id
-                task_dict["id"] = canonical_id
-                # Keep SQLite ID aligned with Google Sheets
-                try:
-                    with get_connection(DB_PATH) as conn:
-                        conn.cursor().execute("UPDATE tasks SET id = ? WHERE rowid = (SELECT max(rowid) FROM tasks)", (canonical_id,))
-                        conn.commit()
-                except Exception:
-                    pass
-            logger.info(f"Task #{canonical_id} synced to Google Sheets.")
-        except Exception as e:
-            logger.error(f"Error syncing task #{canonical_id} to Google Sheets: {e}")
-
-    # Inline button for instant deletion by @orzmkh
-    reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{canonical_id}")]
-    ])
-
-    confirm_text = (
-        f"✅ <b>ЗАДАЧА #{canonical_id} ЗАФИКСИРОВАНА</b>\n\n"
-        f"📋 <b>Задача:</b> {task_text}\n"
-        f"👤 <b>Исполнитель:</b> {assignee}\n"
-        f"✍️ <b>Постановщик:</b> {author}\n"
-        f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
-        f"📊 <b>Статус:</b> Занесена в БД и Google Таблицу"
-    )
-
-    try:
-        await message.reply_text(
-            confirm_text,
-            parse_mode="HTML",
-            reply_markup=reply_markup,
-            reply_to_message_id=message.message_id
-        )
-        logger.info(f"Sent confirmation reply for task #{canonical_id} to chat {message.chat_id}")
-    except Exception as e:
-        logger.error(f"Failed to send task confirmation reply: {e}")
-        try:
-            await update.get_bot().send_message(
-                chat_id=message.chat_id,
-                text=confirm_text,
-                parse_mode="HTML",
-                reply_markup=reply_markup
-            )
-        except Exception as e2:
-            logger.error(f"Fallback send_message also failed: {e2}")
 
 
 async def delete_task_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -630,78 +564,10 @@ async def assign_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         return
 
     await query.answer(f"Исполнитель: {assignee}")
-    task_text = pending.get("task_text", "")
-    author = pending.get("author", f"@{user.username}" if user.username else "@orzmkh")
-    raw_text = pending.get("raw_text", task_text)
+    pending["assignee"] = assignee
+    GLOBAL_PENDING_TASKS[str(query.message.message_id)] = pending
+    await _prompt_for_sla(update, pending, context)
 
-    now = get_now()
-    created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    sla_dt = parse_sla_deadline(raw_text, base_time=now)
-    sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    # Add task to SQLite DB
-    task_dict = add_task(
-        task_text=task_text,
-        assignee=assignee,
-        author=author,
-        sla_deadline=sla_str,
-        created_at=created_at_str,
-        message_link=pending.get("message_link", ""),
-        db_path=DB_PATH
-    )
-
-    canonical_id = task_dict.get("id")
-
-    # Sync to Google Sheets
-    if sheets_sync_instance:
-        try:
-            sheet_id = sheets_sync_instance.append_task(task_dict)
-            if sheet_id:
-                canonical_id = sheet_id
-                task_dict["id"] = canonical_id
-                try:
-                    with get_connection(DB_PATH) as conn:
-                        conn.cursor().execute("UPDATE tasks SET id = ? WHERE rowid = (SELECT max(rowid) FROM tasks)", (canonical_id,))
-                        conn.commit()
-                except Exception:
-                    pass
-            logger.info(f"Task #{canonical_id} synced to Google Sheets.")
-        except Exception as e:
-            logger.error(f"Error syncing task #{canonical_id} to Google Sheets: {e}")
-
-    reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{canonical_id}")]
-    ])
-
-    confirm_text = (
-        f"✅ <b>ЗАДАЧА #{canonical_id} ЗАФИКСИРОВАНА</b>\n\n"
-        f"📋 <b>Задача:</b> {task_text}\n"
-        f"👤 <b>Исполнитель:</b> {assignee}\n"
-        f"✍️ <b>Постановщик:</b> {author}\n"
-        f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
-        f"📊 <b>Статус:</b> Занесена в БД, Google Таблицу и Master Hub"
-    )
-
-    try:
-        await query.edit_message_text(
-            confirm_text,
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
-    except Exception as e:
-        logger.error(f"Error editing message after assigning: {e}")
-
-    # Send direct notification to chat tagging the assignee
-    if assignee and assignee != "Команда":
-        try:
-            chat_id = query.message.chat_id if query.message else message.chat_id
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🎯 {assignee}, вам назначена задача <b>#{canonical_id}</b>: <i>{task_text}</i>\n⏰ Срок / SLA: <b>{sla_str}</b>",
-                parse_mode="HTML"
-            )
-        except Exception as e_tag:
-            logger.warning(f"Could not send tag message to assignee: {e_tag}")
 
 
 async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -710,6 +576,26 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
     
     user = update.message.from_user
     user_id_str = str(user.id) if user else ""
+
+    # Check if awaiting custom SLA text
+    awaiting_sla_msg_id = context.user_data.get("awaiting_sla_for_msg_id") if context else None
+    if awaiting_sla_msg_id and is_authorized_author(user):
+        if context:
+            context.user_data.pop("awaiting_sla_for_msg_id", None)
+        pending = GLOBAL_PENDING_TASKS.pop(str(awaiting_sla_msg_id), None)
+        if pending:
+            sla_text = update.message.text.strip()
+            now = get_now()
+            sla_dt = parse_sla_deadline(sla_text, base_time=now)
+            sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
+            await _finalize_task_creation(
+                update=update,
+                context=context,
+                pending=pending,
+                sla_str=sla_str,
+                reply_to_msg_id=update.message.message_id
+            )
+            return
 
     # 1. Check if there is a pending task waiting for @orzmkh to specify assignee
     pending = None
@@ -723,55 +609,8 @@ async def dispute_reason_input_handler(update: Update, context: ContextTypes.DEF
         mentions = re.findall(r"@[\w_]+", text_in)
         assignee = " ".join(mentions) if mentions else (text_in if text_in.startswith("@") else f"@{text_in}")
 
-        task_text = pending.get("task_text", "")
-        author = pending.get("author", f"@{user.username}" if user and user.username else "@orzmkh")
-        raw_text = pending.get("raw_text", task_text)
-
-        now = get_now()
-        created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        sla_dt = parse_sla_deadline(raw_text, base_time=now)
-        sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-        task_dict = add_task(
-            task_text=task_text,
-            assignee=assignee,
-            author=author,
-            sla_deadline=sla_str,
-            created_at=created_at_str,
-            message_link=pending.get("message_link", ""),
-            db_path=DB_PATH
-        )
-
-        canonical_id = task_dict.get("id")
-
-        if sheets_sync_instance:
-            try:
-                sheet_id = sheets_sync_instance.append_task(task_dict)
-                if sheet_id:
-                    canonical_id = sheet_id
-                    task_dict["id"] = canonical_id
-                    try:
-                        with get_connection(DB_PATH) as conn:
-                            conn.cursor().execute("UPDATE tasks SET id = ? WHERE rowid = (SELECT max(rowid) FROM tasks)", (canonical_id,))
-                            conn.commit()
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.error(f"Error syncing task #{canonical_id} to Google Sheets: {e}")
-
-        reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{canonical_id}")]
-        ])
-
-        confirm_text = (
-            f"✅ <b>ЗАДАЧА #{canonical_id} ЗАФИКСИРОВАНА</b>\n\n"
-            f"📋 <b>Задача:</b> {task_text}\n"
-            f"👤 <b>Исполнитель:</b> {assignee}\n"
-            f"✍️ <b>Постановщик:</b> {author}\n"
-            f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
-            f"📊 <b>Статус:</b> Занесена в БД, Google Таблицу и Master Hub"
-        )
-        await update.message.reply_text(confirm_text, parse_mode="HTML", reply_markup=reply_markup, reply_to_message_id=update.message.message_id)
+        pending["assignee"] = assignee
+        await _prompt_for_sla(update, pending, context)
         return
 
     # 2. Check if awaiting dispute reason
@@ -1063,4 +902,452 @@ async def recurring_task_callback_handler(update: Update, context: ContextTypes.
         draft["day_of_week"] = val
         await query.answer(f"День: {val}")
         await _finish_recurring_task_creation(query, draft, draft_id)
+
+
+# --- SLA & INTERACTIVE CALENDAR SELECTION FUNCTIONS ---
+
+def get_sla_keyboard(msg_id: str) -> InlineKeyboardMarkup:
+    keyboard = [
+        [
+            InlineKeyboardButton("⚡ 1 час", callback_data=f"sla_preset_1h_{msg_id}"),
+            InlineKeyboardButton("⚡ 3 часа", callback_data=f"sla_preset_3h_{msg_id}")
+        ],
+        [
+            InlineKeyboardButton("🌇 До конца дня (18:00)", callback_data=f"sla_preset_today18_{msg_id}"),
+            InlineKeyboardButton("📅 Завтра (18:00)", callback_data=f"sla_preset_tomorrow18_{msg_id}")
+        ],
+        [
+            InlineKeyboardButton("📅 Выбрать дату (Календарь)", callback_data=f"sla_cal_init_{msg_id}")
+        ],
+        [
+            InlineKeyboardButton("⌨️ Указать вручную", callback_data=f"sla_preset_custom_{msg_id}")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def generate_calendar_keyboard(year: int, month: int, msg_id: str) -> InlineKeyboardMarkup:
+    import calendar
+    keyboard = []
+    
+    # Header: Month and Year
+    months_names = {
+        1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель", 5: "Май", 6: "Июнь",
+        7: "Июль", 8: "Август", 9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
+    }
+    month_name = months_names.get(month, f"Месяц {month}")
+    keyboard.append([
+        InlineKeyboardButton(f"{month_name} {year}", callback_data=f"cal_ignore_{msg_id}")
+    ])
+    
+    # Weekdays Header
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([
+        InlineKeyboardButton(w, callback_data=f"cal_ignore_{msg_id}") for w in weekdays
+    ])
+    
+    # Calendar month days
+    month_calendar = calendar.monthcalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(" ", callback_data=f"cal_ignore_{msg_id}"))
+            else:
+                row.append(InlineKeyboardButton(str(day), callback_data=f"cal_day_{year}_{month}_{day}_{msg_id}"))
+        keyboard.append(row)
+        
+    # Navigation Row
+    prev_month = month - 1
+    prev_year = year
+    if prev_month == 0:
+        prev_month = 12
+        prev_year -= 1
+        
+    next_month = month + 1
+    next_year = year
+    if next_month == 13:
+        next_month = 1
+        next_year += 1
+        
+    keyboard.append([
+        InlineKeyboardButton("◀️", callback_data=f"cal_nav_{prev_year}_{prev_month}_{msg_id}"),
+        InlineKeyboardButton("Назад", callback_data=f"sla_back_{msg_id}"),
+        InlineKeyboardButton("▶️", callback_data=f"cal_nav_{next_year}_{next_month}_{msg_id}")
+    ])
+    
+    return InlineKeyboardMarkup(keyboard)
+
+
+def generate_time_keyboard(year: int, month: int, day: int, msg_id: str) -> InlineKeyboardMarkup:
+    times = [
+        ["08:00", "10:00", "12:00", "14:00"],
+        ["16:00", "18:00", "20:00", "22:00"]
+    ]
+    keyboard = []
+    for row in times:
+        keyboard_row = []
+        for t in row:
+            hh, mm = t.split(":")
+            keyboard_row.append(
+                InlineKeyboardButton(t, callback_data=f"cal_time_{year}_{month}_{day}_{hh}_{mm}_{msg_id}")
+            )
+        keyboard.append(keyboard_row)
+        
+    keyboard.append([
+        InlineKeyboardButton("◀️ Назад к календарю", callback_data=f"cal_nav_{year}_{month}_{msg_id}")
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def _prompt_for_sla(update: Update, task_draft: dict, context: ContextTypes.DEFAULT_TYPE):
+    sla_keyboard = get_sla_keyboard(str(task_draft["message_id"]))
+    confirm_text = (
+        f"⏰ <b>Укажите срок выполнения (SLA)!</b>\n\n"
+        f"📋 <b>Задача:</b> {task_draft['task_text']}\n"
+        f"👤 <b>Исполнитель:</b> {task_draft['assignee']}\n\n"
+        f"Выберите быстрый срок или нажмите кнопку для выбора даты на календаре:"
+    )
+    
+    query = update.callback_query
+    if query:
+        sent_msg = query.message
+        await query.edit_message_text(
+            confirm_text,
+            parse_mode="HTML",
+            reply_markup=sla_keyboard
+        )
+        GLOBAL_PENDING_TASKS[str(sent_msg.message_id)] = task_draft
+    else:
+        message = update.message
+        sent_msg = await message.reply_text(
+            confirm_text,
+            parse_mode="HTML",
+            reply_markup=sla_keyboard,
+            reply_to_message_id=message.message_id
+        )
+        GLOBAL_PENDING_TASKS[str(sent_msg.message_id)] = task_draft
+
+
+async def _finalize_task_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, pending: dict, sla_str: str, reply_to_msg_id: int = None, query = None):
+    task_text = pending.get("task_text", "")
+    assignee = pending.get("assignee", "Команда")
+    author = pending.get("author", "@orzmkh")
+    
+    now = get_now()
+    created_at_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    
+    task_dict = add_task(
+        task_text=task_text,
+        assignee=assignee,
+        author=author,
+        sla_deadline=sla_str,
+        created_at=created_at_str,
+        message_link=pending.get("message_link", ""),
+        db_path=DB_PATH
+    )
+
+    canonical_id = task_dict.get("id")
+
+    if sheets_sync_instance:
+        try:
+            sheet_id = sheets_sync_instance.append_task(task_dict)
+            if sheet_id:
+                canonical_id = sheet_id
+                task_dict["id"] = canonical_id
+                try:
+                    with get_connection(DB_PATH) as conn:
+                        conn.cursor().execute("UPDATE tasks SET id = ? WHERE rowid = (SELECT max(rowid) FROM tasks)", (canonical_id,))
+                        conn.commit()
+                except Exception as db_e:
+                    logger.error(f"Failed to update task ID in DB: {db_e}")
+            logger.info(f"Task #{canonical_id} synced to Google Sheets.")
+        except Exception as e:
+            logger.error(f"Error syncing task #{canonical_id} to Google Sheets: {e}")
+
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑 Удалить задачу", callback_data=f"delete_task_{canonical_id}")]
+    ])
+
+    confirm_text = (
+        f"✅ <b>ЗАДАЧА #{canonical_id} ЗАФИКСИРОВАНА</b>\n\n"
+        f"📋 <b>Задача:</b> {task_text}\n"
+        f"👤 <b>Исполнитель:</b> {assignee}\n"
+        f"✍️ <b>Постановщик:</b> {author}\n"
+        f"⏰ <b>Дедлайн SLA:</b> {sla_str}\n"
+        f"📊 <b>Статус:</b> Занесена в БД и Google Таблицу"
+    )
+
+    if query:
+        try:
+            await query.edit_message_text(
+                confirm_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error editing message: {e}")
+    else:
+        chat_id = update.message.chat_id if update.message else pending.get("chat_id")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=confirm_text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+            reply_to_message_id=reply_to_msg_id
+        )
+
+    if assignee and assignee != "Команда":
+        try:
+            chat_id = query.message.chat_id if query and query.message else (update.message.chat_id if update.message else pending.get("chat_id"))
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🎯 {assignee}, вам назначена задача <b>#{canonical_id}</b>: <i>{task_text}</i>\n⏰ Срок / SLA: <b>{sla_str}</b>",
+                parse_mode="HTML"
+            )
+        except Exception as e_tag:
+            logger.warning(f"Could not send tag message to assignee: {e_tag}")
+
+
+async def sla_preset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    user = query.from_user
+    if not is_authorized_author(user):
+        await query.answer("⛔ Только руководитель может задавать SLA!", show_alert=True)
+        return
+
+    parts = data.split("_")
+    preset_type = parts[2]
+    msg_id = parts[3] if len(parts) > 3 else ""
+
+    pending = GLOBAL_PENDING_TASKS.pop(str(query.message.message_id), None)
+    if not pending and msg_id:
+        pending = GLOBAL_PENDING_TASKS.pop(str(msg_id), None)
+
+    if not pending:
+        await query.answer("⚠️ Черновик задачи не найден или уже сохранён.", show_alert=True)
+        return
+
+    now = get_now()
+    if preset_type == "1h":
+        sla_dt = now + timedelta(hours=1)
+    elif preset_type == "3h":
+        sla_dt = now + timedelta(hours=3)
+    elif preset_type == "today18":
+        sla_dt = now.replace(hour=18, minute=0, second=0, microsecond=0)
+        if now >= sla_dt:
+            sla_dt += timedelta(days=1)
+    elif preset_type == "tomorrow18":
+        sla_dt = (now + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
+    elif preset_type == "custom":
+        context.user_data["awaiting_sla_for_msg_id"] = str(query.message.message_id)
+        GLOBAL_PENDING_TASKS[str(query.message.message_id)] = pending
+        await query.edit_message_text(
+            f"✍️ <b>Укажите срок вручную сообщением в этот чат.</b>\n\n"
+            f"📋 <b>Задача:</b> {pending['task_text']}\n"
+            f"👤 <b>Исполнитель:</b> {pending['assignee']}\n\n"
+            f"Примеры ввода:\n"
+            f"• `25.08 14:00` (25 августа в 14:00)\n"
+            f"• `завтра 18:00`\n"
+            f"• `через 2 часа`",
+            parse_mode="HTML"
+        )
+        await query.answer()
+        return
+    else:
+        sla_dt = now + timedelta(days=1)
+
+    sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
+    await query.answer(f"SLA установлен: {sla_str}")
+    
+    await _finalize_task_creation(
+        update=update,
+        context=context,
+        pending=pending,
+        sla_str=sla_str,
+        query=query
+    )
+
+
+async def sla_cal_init_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    user = query.from_user
+    if not is_authorized_author(user):
+        await query.answer("⛔ Только руководитель может использовать календарь!", show_alert=True)
+        return
+
+    parts = data.split("_")
+    msg_id = parts[3] if len(parts) >= 4 else ""
+
+    pending = GLOBAL_PENDING_TASKS.get(str(query.message.message_id))
+    if not pending and msg_id:
+        pending = GLOBAL_PENDING_TASKS.get(str(msg_id))
+
+    if not pending:
+        await query.answer("⚠️ Черновик задачи не найден.", show_alert=True)
+        return
+
+    now = get_now()
+    reply_markup = generate_calendar_keyboard(now.year, now.month, msg_id or str(query.message.message_id))
+    
+    await query.edit_message_text(
+        f"📅 <b>Выберите дату окончания SLA:</b>\n\n"
+        f"📋 <b>Задача:</b> {pending['task_text']}\n"
+        f"👤 <b>Исполнитель:</b> {pending['assignee']}\n",
+        parse_mode="HTML",
+        reply_markup=reply_markup
+    )
+    await query.answer()
+
+
+async def cal_nav_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    parts = data.split("_")
+    if len(parts) < 5:
+        await query.answer("⚠️ Ошибка навигации.", show_alert=True)
+        return
+
+    year = int(parts[2])
+    month = int(parts[3])
+    msg_id = parts[4]
+
+    pending = GLOBAL_PENDING_TASKS.get(str(query.message.message_id))
+    if not pending and msg_id:
+        pending = GLOBAL_PENDING_TASKS.get(str(msg_id))
+
+    if not pending:
+        await query.answer("⚠️ Черновик задачи не найден.", show_alert=True)
+        return
+
+    reply_markup = generate_calendar_keyboard(year, month, msg_id)
+    await query.edit_message_text(
+        f"📅 <b>Выберите дату окончания SLA:</b>\n\n"
+        f"📋 <b>Задача:</b> {pending['task_text']}\n"
+        f"👤 <b>Исполнитель:</b> {pending['assignee']}\n",
+        parse_mode="HTML",
+        reply_markup=reply_markup
+    )
+    await query.answer()
+
+
+async def cal_day_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    parts = data.split("_")
+    if len(parts) < 6:
+        await query.answer("⚠️ Ошибка выбора дня.", show_alert=True)
+        return
+
+    year = int(parts[2])
+    month = int(parts[3])
+    day = int(parts[4])
+    msg_id = parts[5]
+
+    pending = GLOBAL_PENDING_TASKS.get(str(query.message.message_id))
+    if not pending and msg_id:
+        pending = GLOBAL_PENDING_TASKS.get(str(msg_id))
+
+    if not pending:
+        await query.answer("⚠️ Черновик задачи не найден.", show_alert=True)
+        return
+
+    reply_markup = generate_time_keyboard(year, month, day, msg_id)
+    await query.edit_message_text(
+        f"⏰ <b>Выберите время окончания SLA ({day:02d}.{month:02d}.{year}):</b>\n\n"
+        f"📋 <b>Задача:</b> {pending['task_text']}\n"
+        f"👤 <b>Исполнитель:</b> {pending['assignee']}\n",
+        parse_mode="HTML",
+        reply_markup=reply_markup
+    )
+    await query.answer()
+
+
+async def cal_time_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    parts = data.split("_")
+    if len(parts) < 8:
+        await query.answer("⚠️ Ошибка выбора времени.", show_alert=True)
+        return
+
+    year = int(parts[2])
+    month = int(parts[3])
+    day = int(parts[4])
+    hh = int(parts[5])
+    mm = int(parts[6])
+    msg_id = parts[7]
+
+    pending = GLOBAL_PENDING_TASKS.pop(str(query.message.message_id), None)
+    if not pending and msg_id:
+        pending = GLOBAL_PENDING_TASKS.pop(str(msg_id), None)
+
+    if not pending:
+        await query.answer("⚠️ Черновик задачи не найден или уже сохранён.", show_alert=True)
+        return
+
+    sla_dt = datetime(year, month, day, hh, mm, 0)
+    sla_str = sla_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    await query.answer(f"SLA установлен: {sla_str}")
+    
+    await _finalize_task_creation(
+        update=update,
+        context=context,
+        pending=pending,
+        sla_str=sla_str,
+        query=query
+    )
+
+
+async def cal_ignore_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+
+async def sla_back_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    parts = data.split("_")
+    msg_id = parts[2] if len(parts) >= 3 else ""
+
+    pending = GLOBAL_PENDING_TASKS.get(str(query.message.message_id))
+    if not pending and msg_id:
+        pending = GLOBAL_PENDING_TASKS.get(str(msg_id))
+
+    if not pending:
+        await query.answer("⚠️ Черновик задачи не найден.", show_alert=True)
+        return
+
+    sla_keyboard = get_sla_keyboard(msg_id or str(query.message.message_id))
+    await query.edit_message_text(
+        f"⏰ <b>Укажите срок выполнения (SLA)!</b>\n\n"
+        f"📋 <b>Задача:</b> {pending['task_text']}\n"
+        f"👤 <b>Исполнитель:</b> {pending['assignee']}\n\n"
+        f"Выберите быстрый срок или нажмите кнопку для выбора даты на календаре:",
+        parse_mode="HTML",
+        reply_markup=sla_keyboard
+    )
+    await query.answer()
 

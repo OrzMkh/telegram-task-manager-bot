@@ -24,6 +24,13 @@ from task_handlers import (
     assign_callback_handler,
     recurring_task_callback_handler,
     set_sheets_sync,
+    sla_preset_callback_handler,
+    sla_cal_init_callback_handler,
+    cal_nav_callback_handler,
+    cal_day_callback_handler,
+    cal_time_callback_handler,
+    cal_ignore_callback_handler,
+    sla_back_callback_handler,
 )
 
 from task_report_handler import (
@@ -129,6 +136,13 @@ def main():
     application.add_handler(CallbackQueryHandler(dispute_callback_handler, pattern="^dispute_task_"))
     application.add_handler(CallbackQueryHandler(assign_callback_handler, pattern="^assign_"))
     application.add_handler(CallbackQueryHandler(recurring_task_callback_handler, pattern="^(recasgn_|recfreq_|recday_|delrec_)"))
+    application.add_handler(CallbackQueryHandler(sla_preset_callback_handler, pattern="^sla_preset_"))
+    application.add_handler(CallbackQueryHandler(sla_cal_init_callback_handler, pattern="^sla_cal_init_"))
+    application.add_handler(CallbackQueryHandler(cal_nav_callback_handler, pattern="^cal_nav_"))
+    application.add_handler(CallbackQueryHandler(cal_day_callback_handler, pattern="^cal_day_"))
+    application.add_handler(CallbackQueryHandler(cal_time_callback_handler, pattern="^cal_time_"))
+    application.add_handler(CallbackQueryHandler(cal_ignore_callback_handler, pattern="^cal_ignore_"))
+    application.add_handler(CallbackQueryHandler(sla_back_callback_handler, pattern="^sla_back_"))
 
     # 8. Register Auto-detection Message Handler for non-command messages
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), dispute_reason_input_handler), group=1)
